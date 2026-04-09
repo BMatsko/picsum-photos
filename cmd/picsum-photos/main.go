@@ -64,8 +64,12 @@ func main() {
 	log := logger.New(*loglevel)
 	defer log.Sync()
 
-	tracer := test.Tracer(log)
+	log.Infof("starting picsum-photos")
+	log.Infof("storage-path: %s", *storagePath)
+	log.Infof("database-url present: %v", *databaseURL != "")
+	log.Infof("hmac-key present: %v", *hmacKey != "")
 
+	tracer := test.Tracer(log)
 	maxprocs.Set(maxprocs.Logger(log.Infof))
 
 	shutdownCtx, shutdown := signal.NotifyContext(ctx, os.Interrupt, os.Kill, syscall.SIGTERM)
@@ -73,19 +77,25 @@ func main() {
 
 	// ── Database ──────────────────────────────────────────────────────────────
 	if *databaseURL == "" {
-		log.Fatal("DATABASE_URL is required")
+		log.Fatal("DATABASE_URL is required — add a Postgres plugin in Railway")
 	}
 	db, err := postgresDatabase.New(ctx, *databaseURL)
 	if err != nil {
-		log.Fatalf("error initializing database: %s", err)
+		log.Fatalf("error connecting to database: %s", err)
 	}
 	defer db.Close()
+	log.Infof("database connected")
 
 	// ── Storage ───────────────────────────────────────────────────────────────
+	// Auto-create the storage directory so startup doesn't fail before a volume is mounted
+	if err := os.MkdirAll(*storagePath, 0755); err != nil {
+		log.Fatalf("error creating storage directory %q: %s", *storagePath, err)
+	}
 	storage, err := fileStorage.New(*storagePath)
 	if err != nil {
-		log.Fatalf("error initializing storage (check PICSUM_STORAGE_PATH, got %q): %s", *storagePath, err)
+		log.Fatalf("error initializing storage at %q: %s", *storagePath, err)
 	}
+	log.Infof("storage initialized at %s", *storagePath)
 
 	// ── Image processor ───────────────────────────────────────────────────────
 	cache := memory.New()
@@ -97,6 +107,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("error initializing image processor: %s", err)
 	}
+	log.Infof("image processor initialized")
 
 	// ── Health checker ────────────────────────────────────────────────────────
 	checkerCtx, checkerCancel := context.WithCancel(ctx)
@@ -112,31 +123,29 @@ func main() {
 	go checker.Run()
 
 	// ── Resolve root URL ──────────────────────────────────────────────────────
-	// Railway exposes RAILWAY_PUBLIC_DOMAIN automatically
 	if *rootURL == "" {
 		if domain := os.Getenv("RAILWAY_PUBLIC_DOMAIN"); domain != "" {
 			*rootURL = "https://" + domain
 		}
 	}
 	if *rootURL == "" {
-		if port := os.Getenv("PORT"); port != "" {
-			*rootURL = fmt.Sprintf("http://localhost:%s", port)
-		} else {
-			*rootURL = "http://localhost:8080"
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "8080"
 		}
+		*rootURL = fmt.Sprintf("http://localhost:%s", port)
 	}
+	log.Infof("root URL: %s", *rootURL)
 
-	// ── Image API (processes images inline — no redirect) ────────────────────
+	// ── Routers ───────────────────────────────────────────────────────────────
 	imgAPI := imageapi.NewAPI(imageProcessor, log, tracer, cmd.HandlerTimeout, h)
 
-	// ── Main API (routing, DB lookup, list, seed, etc.) ───────────────────────
-	// We point ImageServiceURL at ourselves so redirect URLs resolve locally.
 	mainAPI := &api.API{
 		Database:        db,
 		Log:             log,
 		Tracer:          tracer,
 		RootURL:         *rootURL,
-		ImageServiceURL: *rootURL, // same host — image requests loop back to imgAPI
+		ImageServiceURL: *rootURL,
 		HandlerTimeout:  cmd.HandlerTimeout,
 		HMAC:            h,
 	}
@@ -146,8 +155,6 @@ func main() {
 		log.Fatalf("error initializing router: %s", err)
 	}
 
-	// Combine: image processing routes (/id/{id}/{w}/{h}) handled by imgAPI,
-	// everything else by mainAPI.
 	mux := http.NewServeMux()
 	mux.Handle("/id/", imgAPI.Router())
 	mux.Handle("/", mainRouter)
@@ -189,7 +196,7 @@ func main() {
 		}
 	}()
 
-	log.Infof("picsum-photos listening on %s (root: %s)", listenAddr, *rootURL)
+	log.Infof("picsum-photos listening on %s", listenAddr)
 
 	go metrics.Serve(shutdownCtx, log, checker, *metricsListen)
 

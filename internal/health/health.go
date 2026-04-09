@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -25,7 +26,7 @@ type Checker struct {
 	Log      *logger.Logger
 }
 
-// Status contains the healtcheck status
+// Status contains the healthcheck status
 type Status struct {
 	Healthy  bool   `json:"healthy"`
 	Cache    string `json:"cache,omitempty"`
@@ -71,10 +72,7 @@ func (c *Checker) runCheck() {
 	select {
 	case <-ctx.Done():
 		c.mutex.Lock()
-
-		c.status = Status{
-			Healthy: false,
-		}
+		c.status = Status{Healthy: false}
 		if c.Database != nil {
 			c.status.Database = "unknown"
 		}
@@ -84,21 +82,17 @@ func (c *Checker) runCheck() {
 		if c.Storage != nil {
 			c.status.Storage = "unknown"
 		}
-
 		c.mutex.Unlock()
 		c.Log.Errorw("healthcheck timed out")
 	case status, ok := <-channel:
 		if !ok {
 			return
 		}
-
 		c.mutex.Lock()
 		c.status = status
 		c.mutex.Unlock()
 		if !status.Healthy {
-			c.Log.Errorw("healthcheck error",
-				"status", status,
-			)
+			c.Log.Errorw("healthcheck error", "status", status)
 		}
 	}
 }
@@ -110,9 +104,7 @@ func (c *Checker) check(ctx context.Context, channel chan Status) {
 		return
 	}
 
-	status := Status{
-		Healthy: true,
-	}
+	status := Status{Healthy: true}
 	if c.Database != nil {
 		status.Database = "unknown"
 	}
@@ -123,8 +115,10 @@ func (c *Checker) check(ctx context.Context, channel chan Status) {
 		status.Storage = "unknown"
 	}
 
+	// Database check — ErrNotFound means empty table, which is healthy
 	if c.Database != nil {
-		if _, err := c.Database.GetRandom(ctx); err != nil {
+		_, err := c.Database.GetRandom(ctx)
+		if err != nil && !errors.Is(err, database.ErrNotFound) {
 			status.Healthy = false
 			status.Database = "unhealthy"
 		} else {
@@ -136,6 +130,7 @@ func (c *Checker) check(ctx context.Context, channel chan Status) {
 		return
 	}
 
+	// Cache check
 	if c.Cache != nil {
 		if _, err := c.Cache.Get(ctx, "healthcheck"); err != cache.ErrNotFound {
 			status.Healthy = false
@@ -149,8 +144,10 @@ func (c *Checker) check(ctx context.Context, channel chan Status) {
 		return
 	}
 
+	// Storage check — ErrNotFound means storage is reachable but file doesn't exist, which is healthy
 	if c.Storage != nil {
-		if _, err := c.Storage.Get(ctx, "healthcheck"); err != storage.ErrNotFound {
+		_, err := c.Storage.Get(ctx, "healthcheck")
+		if err != nil && !errors.Is(err, storage.ErrNotFound) {
 			status.Healthy = false
 			status.Storage = "unhealthy"
 		} else {
