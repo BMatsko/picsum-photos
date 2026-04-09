@@ -12,6 +12,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+
+# Add pgx if not already in go.sum (safe to run even if already present)
+RUN go get github.com/jackc/pgx/v5 && go mod tidy
+
 RUN go build -o /bin/picsum-photos ./cmd/picsum-photos
 
 # ─── Runtime stage ───────────────────────────────────────────────────────────
@@ -21,13 +25,14 @@ RUN apk add --no-cache vips
 
 COPY --from=builder /bin/picsum-photos /bin/picsum-photos
 
-# Default port — Railway injects $PORT at runtime
 ENV PORT=8080
 EXPOSE 8080
 
-CMD ["/bin/picsum-photos", \
-     "-listen", "0.0.0.0:${PORT}", \
-     "-database-file-path", "/data/metadata.json", \
-     "-image-service-url", "${PICSUM_IMAGE_SERVICE_URL}", \
-     "-root-url", "${PICSUM_ROOT_URL}", \
-     "-hmac-key", "${PICSUM_HMAC_KEY}"]
+# DATABASE_URL is injected automatically by Railway's Postgres plugin.
+# PICSUM_HMAC_KEY, PICSUM_IMAGE_SERVICE_URL, and PICSUM_ROOT_URL must be
+# set manually in the Railway Variables tab.
+CMD /bin/picsum-photos \
+    -listen "0.0.0.0:${PORT}" \
+    -image-service-url "${PICSUM_IMAGE_SERVICE_URL}" \
+    -root-url "${PICSUM_ROOT_URL}" \
+    -hmac-key "${PICSUM_HMAC_KEY}"
