@@ -2,16 +2,50 @@
 <html lang="en"><head><meta charset="UTF-8"><title>Photos — Picsum Admin</title>{{template "style" .}}
 <style>
 /* ── Tag picklist ── */
-.tagpick { display:flex; flex-wrap:wrap; gap:6px; align-items:center; min-height:38px; padding:6px 8px; border:1px solid var(--border); border-radius:4px; background:var(--card); cursor:text; }
-.tagpick:focus-within { border-color: var(--accent); }
-.tagpick .tag-chip { display:inline-flex; align-items:center; gap:4px; background:var(--accent); color:#fff; border-radius:3px; padding:2px 7px 2px 8px; font-size:11px; font-weight:600; letter-spacing:.02em; white-space:nowrap; }
-.tagpick .tag-chip button { background:none; border:none; color:rgba(255,255,255,.8); cursor:pointer; font-size:13px; line-height:1; padding:0; margin:0; }
-.tagpick .tag-chip button:hover { color:#fff; }
-.tagpick input[type=text] { border:none; outline:none; background:transparent; font-size:13px; color:var(--text); min-width:120px; flex:1; padding:0; }
-.tagpick .tag-suggestions { position:absolute; z-index:100; background:var(--card); border:1px solid var(--border); border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,.18); min-width:160px; max-height:200px; overflow-y:auto; }
 .tagpick-wrap { position:relative; }
-.tag-sug-item { padding:7px 12px; font-size:13px; cursor:pointer; color:var(--text); }
-.tag-sug-item:hover, .tag-sug-item.active { background:var(--accent); color:#fff; }
+.tagpick {
+  display:flex; flex-wrap:wrap; gap:5px; align-items:center;
+  min-height:38px; padding:5px 8px;
+  border:1px solid var(--border); border-radius:4px;
+  background:var(--bg); cursor:text;
+  transition:border-color .15s;
+}
+.tagpick:focus-within { border-color:#555; }
+.tag-chip {
+  display:inline-flex; align-items:center; gap:3px;
+  background:#1e3a5f; color:#7eb8f7;
+  border:1px solid #2a5298;
+  border-radius:3px; padding:2px 6px 2px 8px;
+  font-size:11px; font-weight:600; letter-spacing:.02em; white-space:nowrap;
+}
+.tag-chip button {
+  background:none; border:none; color:#5a9fd4;
+  cursor:pointer; font-size:14px; line-height:1;
+  padding:0 0 0 2px; margin:0;
+}
+.tag-chip button:hover { color:#7eb8f7; }
+.tagpick input[type=text] {
+  border:none; outline:none; background:transparent;
+  font-size:13px; color:var(--text);
+  min-width:100px; flex:1; padding:2px 0;
+}
+.tag-suggestions {
+  position:absolute; z-index:200;
+  background:#1a1a1a; border:1px solid #333;
+  border-radius:4px; box-shadow:0 6px 16px rgba(0,0,0,.5);
+  min-width:180px; max-height:200px; overflow-y:auto;
+  top:calc(100% + 4px); left:0;
+}
+.tag-sug-item {
+  padding:8px 12px; font-size:13px;
+  cursor:pointer; color:var(--text);
+  display:flex; align-items:center; justify-content:space-between;
+}
+.tag-sug-item:hover, .tag-sug-item.active {
+  background:#1e3a5f; color:#7eb8f7;
+}
+.tag-sug-new { font-style:italic; color:var(--muted); font-size:11px; }
+.tag-sug-item:hover .tag-sug-new, .tag-sug-item.active .tag-sug-new { color:#5a9fd4; }
 </style>
 </head>
 <body>{{template "nav" .}}
@@ -191,20 +225,34 @@ function TagPicklist(container, hiddenInput, initialTags) {
 
   function openSug(filter) {
     closeSug();
-    var matches = allTags.filter(function(t){ return t.toLowerCase().startsWith(filter.toLowerCase()) && tags.indexOf(t)===-1; });
-    if (!matches.length) return;
+    var fl = filter.toLowerCase().trim();
+    var matches = allTags.filter(function(t){ return t.toLowerCase().indexOf(fl) !== -1 && tags.indexOf(t)===-1; });
+    var showNew = fl && allTags.indexOf(fl) === -1 && tags.indexOf(fl) === -1;
+    if (!matches.length && !showNew) return;
     sugEl = document.createElement('div');
     sugEl.className = 'tag-suggestions';
     activeIdx = -1;
-    matches.forEach(function(t, i) {
+    var items = [];
+    matches.forEach(function(t) {
       var item = document.createElement('div');
       item.className = 'tag-sug-item';
       item.textContent = t;
       item.addEventListener('mousedown', function(e){ e.preventDefault(); addTag(t); });
-      item.addEventListener('mouseover', function(){ activeIdx=i; highlightSug(); });
+      item.addEventListener('mouseover', function(){ activeIdx=items.indexOf(item); highlightSug(); });
       sugEl.appendChild(item);
+      items.push(item);
     });
+    if (showNew) {
+      var item = document.createElement('div');
+      item.className = 'tag-sug-item';
+      item.innerHTML = '<span>'+fl+'</span><span class="tag-sug-new">Add new</span>';
+      item.addEventListener('mousedown', function(e){ e.preventDefault(); addTag(fl); });
+      item.addEventListener('mouseover', function(){ activeIdx=items.indexOf(item); highlightSug(); });
+      sugEl.appendChild(item);
+      items.push(item);
+    }
     container.parentNode.appendChild(sugEl);
+    return items;
   }
 
   function highlightSug() {
@@ -217,6 +265,8 @@ function TagPicklist(container, hiddenInput, initialTags) {
   }
 
   inputEl.addEventListener('input', function() { openSug(inputEl.value); });
+  // Focus: show all existing tags as suggestions if input is blank
+  inputEl.addEventListener('focus', function() { openSug(inputEl.value || ''); });
   inputEl.addEventListener('keydown', function(e) {
     var items = sugEl ? sugEl.querySelectorAll('.tag-sug-item') : [];
     if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx=Math.min(activeIdx+1,items.length-1); highlightSug(); }
@@ -233,7 +283,6 @@ function TagPicklist(container, hiddenInput, initialTags) {
     } else if (e.key === 'Escape') { closeSug(); }
   });
   inputEl.addEventListener('blur', function() { setTimeout(closeSug, 150); });
-  inputEl.addEventListener('focus', function() { if (inputEl.value) openSug(inputEl.value); });
 
   render();
 
