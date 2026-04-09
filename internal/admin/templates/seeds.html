@@ -1,42 +1,37 @@
 {{define "seeds.html"}}<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><title>Seeds — Picsum Admin</title>{{template "style" .}}</head>
-<body>{{template "nav" (map "Page" "seeds")}}
+<body>{{template "nav" .}}
 <main>
 <h1>Seeds</h1>
-<p class="sub">Seeds are deterministic — the same seed string always returns the same photo. Hash algorithm: murmur3.</p>
+<p class="sub">Seeds are sticky — the first resolution is stored and returned for all future requests regardless of tag.</p>
+
+{{if .Success}}<div class="alert alert-ok">{{.Success}}</div>{{end}}
 
 <div class="card">
-  <h2>How seeding works</h2>
-  <p style="color:var(--muted);font-size:13px;line-height:1.8;">
-    Any string can be a seed. The seed is hashed with <strong style="color:var(--text);">murmur3</strong> into an int64, which seeds a Go <code>rand.New()</code>, and <code>Intn(len(photos))</code> picks the photo. The result is stable as long as the <strong style="color:var(--text);">order of photos</strong> (sorted by ID) does not change.
-  </p>
-</div>
-
-<div class="card">
-  <h2>Try seeds</h2>
-  <table>
-    <thead><tr><th>Seed</th><th>400 × 300</th><th>200 × 200</th><th>1200 × 400</th></tr></thead>
+  <h2>How it works</h2>
+  <table style="margin-bottom:0;">
     <tbody>
-    {{range .Images}}
-    <tr>
-      <td><code>{{.ID}}</code></td>
-      <td><a class="link" href="{{$.RootURL}}/seed/{{.ID}}/400/300" target="_blank">{{$.RootURL}}/seed/{{.ID}}/400/300</a></td>
-      <td><a class="link" href="{{$.RootURL}}/seed/{{.ID}}/200/200" target="_blank">/seed/{{.ID}}/200/200</a></td>
-      <td><a class="link" href="{{$.RootURL}}/seed/{{.ID}}/1200/400" target="_blank">/seed/{{.ID}}/1200/400</a></td>
-    </tr>
-    {{end}}
-    {{if not .Images}}
-    <tr><td colspan="4" style="color:var(--muted);font-size:13px;">No photos in library yet.</td></tr>
-    {{end}}
+      <tr>
+        <td style="width:200px;"><code>/seed/abc/400/300</code></td>
+        <td style="color:var(--muted);font-size:13px;">No prior resolution → picks from full pool deterministically → stores result</td>
+      </tr>
+      <tr>
+        <td><code>/seed/abc/400/300?tag=nature</code></td>
+        <td style="color:var(--muted);font-size:13px;">No prior resolution → picks from <strong style="color:var(--text);">nature-tagged photos only</strong> → stores result</td>
+      </tr>
+      <tr>
+        <td><code>/seed/abc/400/300</code> <em style="color:var(--muted);">later</em></td>
+        <td style="color:var(--muted);font-size:13px;">Resolution already stored → returns same photo regardless of tag</td>
+      </tr>
     </tbody>
   </table>
 </div>
 
 <div class="card">
-  <h2>Custom seed tester</h2>
-  <p style="color:var(--muted);font-size:13px;margin-bottom:14px;">Type any string to generate a seed URL.</p>
-  <div style="display:flex;gap:10px;align-items:center;">
-    <input type="text" id="seedInput" placeholder="my-custom-seed" style="max-width:300px;">
+  <h2>Seed tester</h2>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <input type="text" id="seedInput" placeholder="my-seed" style="max-width:220px;">
+    <input type="text" id="tagInput" placeholder="tag (optional)" style="max-width:150px;">
     <select id="seedW" style="padding:9px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);">
       <option>400</option><option>800</option><option>1200</option><option>200</option>
     </select>
@@ -46,15 +41,61 @@
     </select>
     <button class="btn btn-primary" onclick="openSeed()">Open →</button>
   </div>
+  <p id="seedPreviewURL" style="color:var(--muted);font-size:12px;margin-top:10px;"></p>
 </div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    <h2 style="margin-bottom:0;">Stored resolutions ({{len .Seeds}})</h2>
+    {{if .Seeds}}
+    <form method="POST" action="/admin/seeds/clear" onsubmit="return confirm('Clear ALL seed resolutions?')">
+      <input type="hidden" name="seed" value="">
+      <button type="submit" class="btn btn-danger">Clear all</button>
+    </form>
+    {{end}}
+  </div>
+  {{if .Seeds}}
+  <table>
+    <thead><tr><th>Seed</th><th>Resolves to</th><th>Author</th><th>First seen</th><th></th></tr></thead>
+    <tbody>
+    {{range .Seeds}}
+    <tr>
+      <td><code>{{.Seed}}</code></td>
+      <td><a class="link" href="{{$.RootURL}}/id/{{.ImageID}}/200/150" target="_blank"><img style="width:60px;height:40px;object-fit:cover;border-radius:3px;vertical-align:middle;"> <code>{{.ImageID}}</code></a></td>
+      <td style="color:var(--muted);font-size:12px;">{{.Author}}</td>
+      <td style="color:var(--muted);font-size:12px;">{{.CreatedAt}}</td>
+      <td>
+        <form method="POST" action="/admin/seeds/clear">
+          <input type="hidden" name="seed" value="{{.Seed}}">
+          <button type="submit" class="btn btn-danger" style="font-size:11px;padding:4px 10px;">Clear</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p style="color:var(--muted);font-size:13px;">No seeds resolved yet. Use the tester above or make a <code>/seed/*</code> API request.</p>
+  {{end}}
+</div>
+
 <script>
-function openSeed(){
-  var s=document.getElementById('seedInput').value.trim()||'hello';
-  var w=document.getElementById('seedW').value;
-  var h=document.getElementById('seedH').value;
-  window.open('{{.RootURL}}/seed/'+encodeURIComponent(s)+'/'+w+'/'+h,'_blank');
+function buildURL() {
+  var s = document.getElementById('seedInput').value.trim() || 'hello';
+  var tag = document.getElementById('tagInput').value.trim();
+  var w = document.getElementById('seedW').value;
+  var h = document.getElementById('seedH').value;
+  var url = '{{.RootURL}}/seed/' + encodeURIComponent(s) + '/' + w + '/' + h;
+  if (tag) url += '?tag=' + encodeURIComponent(tag);
+  return url;
 }
-document.getElementById('seedInput').addEventListener('keydown',function(e){if(e.key==='Enter')openSeed();});
+function openSeed() { window.open(buildURL(), '_blank'); }
+function updatePreview() { document.getElementById('seedPreviewURL').textContent = buildURL(); }
+['seedInput','tagInput','seedW','seedH'].forEach(function(id){
+  document.getElementById(id).addEventListener('input', updatePreview);
+});
+updatePreview();
+document.getElementById('seedInput').addEventListener('keydown', function(e){ if(e.key==='Enter') openSeed(); });
 </script>
 </main></body></html>
 {{end}}

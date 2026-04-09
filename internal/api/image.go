@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"expvar"
 	"fmt"
 	"math"
@@ -93,11 +94,23 @@ func (a *API) getImage(r *http.Request, imageID string) (*database.Image, *handl
 }
 
 func (a *API) getImageFromSeed(r *http.Request, imageSeed string) (*database.Image, *handler.Error) {
-	// Hash the input using murmur3
 	murmurHash := murmur3.StringSum64(imageSeed)
+	tag := r.URL.Query().Get("tag")
 
-	// Get a random image by the hash
-	image, err := a.Database.GetRandomWithSeed(r.Context(), int64(murmurHash))
+	// If the database supports tag-based seed resolution, use it
+	type taggedDB interface {
+		GetRandomWithSeedAndTag(ctx context.Context, seed int64, seedStr string, tag string) (*database.Image, error)
+	}
+
+	var image *database.Image
+	var err error
+
+	if tdb, ok := a.Database.(taggedDB); ok {
+		image, err = tdb.GetRandomWithSeedAndTag(r.Context(), int64(murmurHash), imageSeed, tag)
+	} else {
+		image, err = a.Database.GetRandomWithSeed(r.Context(), int64(murmurHash))
+	}
+
 	if err != nil {
 		a.logError(r, "error getting random image from database", err)
 		return nil, handler.InternalServerError()
@@ -105,6 +118,7 @@ func (a *API) getImageFromSeed(r *http.Request, imageSeed string) (*database.Ima
 
 	return image, nil
 }
+
 
 func (a *API) validateAndRedirect(w http.ResponseWriter, r *http.Request, p *params.Params, image *database.Image, cacheable bool) *handler.Error {
 	if err := validateImageParams(p); err != nil {

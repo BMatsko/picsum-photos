@@ -1,25 +1,47 @@
 {{define "photos.html"}}<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><title>Photos — Picsum Admin</title>{{template "style" .}}</head>
-<body>{{template "nav" (map "Page" "photos")}}
+<body>{{template "nav" .}}
 <main>
 <h1>Photos</h1>
-<p class="sub">Manage your image library. Each photo needs a matching <code>&lt;id&gt;.jpg</code> file in the storage volume.</p>
+<p class="sub">Each photo needs a matching <code>&lt;id&gt;.jpg</code> file. Width/height auto-detect from JPEG.</p>
 
 {{if .Success}}<div class="alert alert-ok">{{.Success}}</div>{{end}}
 {{if .Error}}<div class="alert alert-err">{{.Error}}</div>{{end}}
 
 <div class="card">
   <h2>Upload a photo</h2>
-  <form method="POST" action="/admin/photos/upload" enctype="multipart/form-data">
+  <form method="POST" action="/admin/photos/upload" enctype="multipart/form-data" id="uploadForm">
     <div class="g3" style="margin-bottom:14px;">
-      <div class="frow"><label>ID <span style="color:#c0392b">*</span></label><input type="text" name="id" placeholder="e.g. 42" required></div>
-      <div class="frow"><label>Author <span style="color:#c0392b">*</span></label><input type="text" name="author" placeholder="e.g. Jane Doe" required></div>
-      <div class="frow"><label>Source URL</label><input type="text" name="url" placeholder="https://example.com"></div>
+      <div class="frow">
+        <label>ID <span style="color:#c0392b">*</span> <span id="idStatus" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;"></span></label>
+        <input type="text" name="id" id="photoId" placeholder="Auto-filled…" required>
+      </div>
+      <div class="frow">
+        <label>Author <span style="color:#c0392b">*</span></label>
+        <input type="text" name="author" placeholder="e.g. Jane Doe" required>
+      </div>
+      <div class="frow">
+        <label>Source URL</label>
+        <input type="text" name="url" id="photoUrl" placeholder="Auto-filled from filename…">
+      </div>
     </div>
     <div class="g3" style="margin-bottom:14px;">
-      <div class="frow"><label>Width (px)</label><input type="number" name="width" placeholder="e.g. 5616"></div>
-      <div class="frow"><label>Height (px)</label><input type="number" name="height" placeholder="e.g. 3744"></div>
-      <div class="frow"><label>JPEG File <span style="color:#c0392b">*</span></label><input type="file" name="photo" accept="image/jpeg" required></div>
+      <div class="frow">
+        <label>Width (px) <span id="wStatus" style="color:var(--success-color);font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;"></span></label>
+        <input type="number" name="width" id="photoW" placeholder="Auto-detected from file">
+      </div>
+      <div class="frow">
+        <label>Height (px) <span id="hStatus" style="color:var(--success-color);font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;"></span></label>
+        <input type="number" name="height" id="photoH" placeholder="Auto-detected from file">
+      </div>
+      <div class="frow">
+        <label>Tags <span style="color:var(--muted);font-weight:400;text-transform:none;font-size:11px;">(comma-separated)</span></label>
+        <input type="text" name="tags" placeholder="e.g. nature, portrait, urban">
+      </div>
+    </div>
+    <div class="frow" style="margin-bottom:16px;">
+      <label>JPEG File <span style="color:#c0392b">*</span></label>
+      <input type="file" name="photo" id="photoFile" accept="image/jpeg" required>
     </div>
     <button type="submit" class="btn btn-primary">Upload photo</button>
   </form>
@@ -29,15 +51,20 @@
   <h2>Library ({{len .Images}} photos)</h2>
   {{if .Images}}
   <table>
-    <thead><tr><th>Preview</th><th>ID</th><th>Author</th><th>Dimensions</th><th>URL</th><th></th></tr></thead>
+    <thead><tr><th>Preview</th><th>ID</th><th>Author</th><th>Dimensions</th><th>Tags</th><th></th></tr></thead>
     <tbody>
     {{range .Images}}
     <tr>
-      <td><img class="thumb" src="{{$.RootURL}}/id/{{.ID}}/112/76" alt="" loading="lazy"></td>
+      <td><img class="thumb" src="{{$.RootURL}}/id/{{.ID}}/112/76" alt="" loading="lazy" onerror="this.style.opacity=0.2"></td>
       <td><code>{{.ID}}</code></td>
       <td>{{.Author}}</td>
-      <td style="color:var(--muted);font-size:12px;">{{.Width}} × {{.Height}}</td>
-      <td style="font-size:12px;"><a class="link" href="{{.URL}}" target="_blank">{{.URL}}</a></td>
+      <td style="color:var(--muted);font-size:12px;white-space:nowrap;">{{.Width}} × {{.Height}}</td>
+      <td>
+        <form method="POST" action="/admin/photos/{{.ID}}/tags" style="display:flex;gap:6px;align-items:center;">
+          <input type="text" name="tags" value="{{join .Tags ", "}}" placeholder="nature, portrait…" style="width:160px;padding:5px 8px;font-size:12px;">
+          <button type="submit" class="btn btn-ghost" style="padding:5px 10px;font-size:12px;">Save</button>
+        </form>
+      </td>
       <td>
         <form method="POST" action="/admin/photos/{{.ID}}/delete" onsubmit="return confirm('Delete photo {{.ID}}?')">
           <button type="submit" class="btn btn-danger">Delete</button>
@@ -51,5 +78,38 @@
   <p style="color:var(--muted);font-size:13px;">No photos yet. Upload your first one above.</p>
   {{end}}
 </div>
+
+<script>
+// Auto-fill ID on page load
+fetch('/admin/api/next-id').then(r=>r.json()).then(d=>{
+  var el = document.getElementById('photoId');
+  el.value = d.next_id;
+  document.getElementById('idStatus').textContent = '(auto-filled)';
+});
+
+// Auto-detect width/height from file, and pre-fill URL from filename
+document.getElementById('photoFile').addEventListener('change', function(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+
+  // Source URL from filename
+  var urlEl = document.getElementById('photoUrl');
+  if (!urlEl.value) urlEl.value = file.name;
+
+  // Dimensions from image
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    var img = new Image();
+    img.onload = function() {
+      document.getElementById('photoW').value = img.naturalWidth;
+      document.getElementById('photoH').value = img.naturalHeight;
+      document.getElementById('wStatus').textContent = '(detected)';
+      document.getElementById('hStatus').textContent = '(detected)';
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+</script>
 </main></body></html>
 {{end}}

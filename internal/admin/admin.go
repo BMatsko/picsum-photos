@@ -3,8 +3,11 @@ package admin
 import (
 	"crypto/subtle"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
+	"image"
+	_ "image/jpeg"
 	"io"
 	"net/http"
 	"os"
@@ -12,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DMarby/picsum-photos/internal/database"
 	"github.com/DMarby/picsum-photos/internal/database/postgres"
 	"github.com/gorilla/mux"
 )
@@ -29,10 +31,9 @@ type Admin struct {
 	templates   *template.Template
 }
 
-// sessionToken is a simple in-memory session (resets on restart)
 var sessionToken = fmt.Sprintf("sess_%d", time.Now().UnixNano())
 
-// New creates an Admin instance and parses templates
+// New creates an Admin instance and parses templates.
 func New(db *postgres.Provider, storagePath, password, rootURL string) (*Admin, error) {
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		"map": func(kv ...any) map[string]any {
@@ -43,14 +44,21 @@ func New(db *postgres.Provider, storagePath, password, rootURL string) (*Admin, 
 			return m
 		},
 		"not": func(v any) bool {
-			if v == nil { return true }
+			if v == nil {
+				return true
+			}
 			switch t := v.(type) {
-			case bool: return !t
-			case int: return t == 0
-			case string: return t == ""
-			default: return false
+			case bool:
+				return !t
+			case int:
+				return t == 0
+			case string:
+				return t == ""
+			default:
+				return false
 			}
 		},
+		"join": strings.Join,
 	}).ParseFS(templateFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parsing admin templates: %w", err)
@@ -64,7 +72,7 @@ func New(db *postgres.Provider, storagePath, password, rootURL string) (*Admin, 
 	}, nil
 }
 
-// Router returns the admin HTTP handler
+// Router returns the admin HTTP handler.
 func (a *Admin) Router() http.Handler {
 	r := mux.NewRouter()
 	r.HandleFunc("/admin/login", a.handleLoginPage).Methods("GET")
@@ -74,8 +82,12 @@ func (a *Admin) Router() http.Handler {
 	r.HandleFunc("/admin/photos", a.auth(a.handlePhotos)).Methods("GET")
 	r.HandleFunc("/admin/photos/upload", a.auth(a.handleUpload)).Methods("POST")
 	r.HandleFunc("/admin/photos/{id}/delete", a.auth(a.handleDelete)).Methods("POST")
+	r.HandleFunc("/admin/photos/{id}/tags", a.auth(a.handleUpdateTags)).Methods("POST")
 	r.HandleFunc("/admin/seeds", a.auth(a.handleSeeds)).Methods("GET")
+	r.HandleFunc("/admin/seeds/clear", a.auth(a.handleClearSeed)).Methods("POST")
 	r.HandleFunc("/admin/docs", a.auth(a.handleDocs)).Methods("GET")
+	// JSON API for auto-fill
+	r.HandleFunc("/admin/api/next-id", a.auth(a.handleNextID)).Methods("GET")
 	return r
 }
 
@@ -95,9 +107,7 @@ func (a *Admin) auth(next http.HandlerFunc) http.HandlerFunc {
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 func (a *Admin) handleLoginPage(w http.ResponseWriter, r *http.Request) {
-	a.render(w, "login.html", map[string]any{
-		"Error": r.URL.Query().Get("error"),
-	})
+	a.render(w, "login.html", map[string]any{"Error": r.URL.Query().Get("error")})
 }
 
 func (a *Admin) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
@@ -106,42 +116,32 @@ func (a *Admin) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     "admin_session",
-		Value:    sessionToken,
-		Path:     "/admin",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		Name: "admin_session", Value: sessionToken,
+		Path: "/admin", HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	})
 	http.Redirect(w, r, "/admin", http.StatusFound)
 }
 
 func (a *Admin) handleLogout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:   "admin_session",
-		Value:  "",
-		Path:   "/admin",
-		MaxAge: -1,
-	})
+	http.SetCookie(w, &http.Cookie{Name: "admin_session", Value: "", Path: "/admin", MaxAge: -1})
 	http.Redirect(w, r, "/admin/login", http.StatusFound)
 }
 
 func (a *Admin) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	images, _ := a.DB.ListAll(r.Context())
 	a.render(w, "dashboard.html", map[string]any{
-		"PhotoCount": len(images),
-		"RootURL":    a.RootURL,
+		"Page": "dashboard", "PhotoCount": len(images), "RootURL": a.RootURL,
 	})
 }
 
 func (a *Admin) handlePhotos(w http.ResponseWriter, r *http.Request) {
-	images, err := a.DB.ListAll(r.Context())
+	images, err := a.DB.ListAllWithTags(r.Context())
 	if err != nil {
 		http.Error(w, "Database error", 500)
 		return
 	}
 	a.render(w, "photos.html", map[string]any{
-		"Images":  images,
-		"RootURL": a.RootURL,
+		"Page": "photos", "Images": images, "RootURL": a.RootURL,
 		"Success": r.URL.Query().Get("success"),
 		"Error":   r.URL.Query().Get("error"),
 	})
@@ -156,6 +156,7 @@ func (a *Admin) handleUpload(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.FormValue("id"))
 	author := strings.TrimSpace(r.FormValue("author"))
 	imgURL := strings.TrimSpace(r.FormValue("url"))
+	tagsRaw := strings.TrimSpace(r.FormValue("tags"))
 
 	var width, height int
 	fmt.Sscan(r.FormValue("width"), &width)
@@ -166,37 +167,57 @@ func (a *Admin) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, _, err := r.FormFile("photo")
+	// Parse tags
+	var tags []string
+	for _, t := range strings.Split(tagsRaw, ",") {
+		t = strings.TrimSpace(strings.ToLower(t))
+		if t != "" {
+			tags = append(tags, t)
+		}
+	}
+
+	file, header, err := r.FormFile("photo")
 	if err != nil {
 		http.Redirect(w, r, "/admin/photos?error=No+photo+file+provided", http.StatusFound)
 		return
 	}
 	defer file.Close()
 
-	destPath := filepath.Join(a.StoragePath, id+".jpg")
-	dest, err := os.Create(destPath)
+	// Read file into memory to decode dimensions if not provided
+	data, err := io.ReadAll(file)
 	if err != nil {
-		http.Redirect(w, r, "/admin/photos?error=Failed+to+save+file", http.StatusFound)
+		http.Redirect(w, r, "/admin/photos?error=Failed+to+read+file", http.StatusFound)
 		return
 	}
-	defer dest.Close()
-	if _, err := io.Copy(dest, file); err != nil {
-		http.Redirect(w, r, "/admin/photos?error=Failed+to+write+file", http.StatusFound)
+
+	if width == 0 || height == 0 {
+		if cfg, _, err2 := image.DecodeConfig(strings.NewReader(string(data))); err2 == nil {
+			width, height = cfg.Width, cfg.Height
+		}
+	}
+
+	// Use filename as source URL hint if not provided
+	if imgURL == "" && header != nil {
+		imgURL = header.Filename
+	}
+
+	destPath := filepath.Join(a.StoragePath, id+".jpg")
+	if err := os.WriteFile(destPath, data, 0644); err != nil {
+		http.Redirect(w, r, "/admin/photos?error=Failed+to+save+file", http.StatusFound)
 		return
 	}
 
 	_, err = a.DB.Pool().Exec(r.Context(),
-		`INSERT INTO images (id, author, url, width, height) VALUES ($1, $2, $3, $4, $5)
-		 ON CONFLICT (id) DO UPDATE SET author=$2, url=$3, width=$4, height=$5`,
-		id, author, imgURL, width, height,
+		`INSERT INTO images (id, author, url, width, height, tags) VALUES ($1,$2,$3,$4,$5,$6)
+		 ON CONFLICT (id) DO UPDATE SET author=$2, url=$3, width=$4, height=$5, tags=$6`,
+		id, author, imgURL, width, height, tags,
 	)
 	if err != nil {
 		os.Remove(destPath)
 		http.Redirect(w, r, "/admin/photos?error=Database+error", http.StatusFound)
 		return
 	}
-
-	http.Redirect(w, r, "/admin/photos?success=Photo+uploaded+successfully", http.StatusFound)
+	http.Redirect(w, r, "/admin/photos?success=Photo+uploaded", http.StatusFound)
 }
 
 func (a *Admin) handleDelete(w http.ResponseWriter, r *http.Request) {
@@ -209,18 +230,75 @@ func (a *Admin) handleDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/photos?success=Photo+deleted", http.StatusFound)
 }
 
+func (a *Admin) handleUpdateTags(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	r.ParseForm()
+	tagsRaw := strings.TrimSpace(r.FormValue("tags"))
+
+	var tags []string
+	for _, t := range strings.Split(tagsRaw, ",") {
+		t = strings.TrimSpace(strings.ToLower(t))
+		if t != "" {
+			tags = append(tags, t)
+		}
+	}
+
+	if _, err := a.DB.Pool().Exec(r.Context(),
+		`UPDATE images SET tags = $1 WHERE id = $2`, tags, id); err != nil {
+		http.Redirect(w, r, "/admin/photos?error=Tag+update+failed", http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, "/admin/photos?success=Tags+updated", http.StatusFound)
+}
+
 func (a *Admin) handleSeeds(w http.ResponseWriter, r *http.Request) {
-	images, _ := a.DB.ListAll(r.Context())
+	type SeedRow struct {
+		Seed      string
+		ImageID   string
+		Author    string
+		CreatedAt string
+	}
+	rows, err := a.DB.Pool().Query(r.Context(),
+		`SELECT sr.seed, sr.image_id, i.author, sr.created_at
+		 FROM seed_resolutions sr JOIN images i ON i.id = sr.image_id
+		 ORDER BY sr.created_at DESC LIMIT 200`)
+	var seeds []SeedRow
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var s SeedRow
+			var ts time.Time
+			rows.Scan(&s.Seed, &s.ImageID, &s.Author, &ts)
+			s.CreatedAt = ts.Format("Jan 2, 2006 15:04")
+			seeds = append(seeds, s)
+		}
+	}
+
+	images, _ := a.DB.ListAllWithTags(r.Context())
 	a.render(w, "seeds.html", map[string]any{
-		"Images":  images,
-		"RootURL": a.RootURL,
+		"Page": "seeds", "Seeds": seeds, "Images": images, "RootURL": a.RootURL,
 	})
 }
 
+func (a *Admin) handleClearSeed(w http.ResponseWriter, r *http.Request) {
+	seed := r.FormValue("seed")
+	if seed == "" {
+		// Clear all
+		a.DB.Pool().Exec(r.Context(), `DELETE FROM seed_resolutions`)
+	} else {
+		a.DB.Pool().Exec(r.Context(), `DELETE FROM seed_resolutions WHERE seed = $1`, seed)
+	}
+	http.Redirect(w, r, "/admin/seeds?success=Seed+cleared", http.StatusFound)
+}
+
 func (a *Admin) handleDocs(w http.ResponseWriter, r *http.Request) {
-	a.render(w, "docs.html", map[string]any{
-		"RootURL": a.RootURL,
-	})
+	a.render(w, "docs.html", map[string]any{"Page": "docs", "RootURL": a.RootURL})
+}
+
+func (a *Admin) handleNextID(w http.ResponseWriter, r *http.Request) {
+	nextID, _ := a.DB.NextID(r.Context())
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"next_id": nextID})
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -231,24 +309,3 @@ func (a *Admin) render(w http.ResponseWriter, tmpl string, data any) {
 		http.Error(w, "Template error: "+err.Error(), 500)
 	}
 }
-
-// SeedExample is used in the seeds view
-type SeedExample struct {
-	Seed string
-	URL  string
-}
-
-// BuildSeedURLs generates example seed URLs for display
-func BuildSeedURLs(rootURL string, seeds []string, width, height int) []SeedExample {
-	out := make([]SeedExample, len(seeds))
-	for i, s := range seeds {
-		out[i] = SeedExample{
-			Seed: s,
-			URL:  fmt.Sprintf("%s/seed/%s/%d/%d", rootURL, s, width, height),
-		}
-	}
-	return out
-}
-
-// unused import guard
-var _ = database.Image{}
