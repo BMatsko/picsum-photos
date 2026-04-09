@@ -23,6 +23,7 @@ import (
 
 	postgresDatabase "github.com/DMarby/picsum-photos/internal/database/postgres"
 	fileStorage "github.com/DMarby/picsum-photos/internal/storage/file"
+	sftpStorage "github.com/DMarby/picsum-photos/internal/storage/sftp"
 	"github.com/DMarby/picsum-photos/internal/admin"
 	"github.com/DMarby/picsum-photos/internal/handler"
 	"github.com/DMarby/picsum-photos/internal/health"
@@ -38,7 +39,12 @@ var (
 	listen        = flag.String("listen", "", "listen address (tcp host:port or unix socket path)")
 	metricsListen = flag.String("metrics-listen", "127.0.0.1:8082", "metrics listen address")
 	rootURL       = flag.String("root-url", "", "public root URL of this service")
-	storagePath   = flag.String("storage-path", "/data/images", "path to the directory containing image JPEGs")
+	storagePath   = flag.String("storage-path", "/data/images", "path to the directory containing image JPEGs (local fallback)")
+	sftpHost      = flag.String("sftp-host", "", "SFTP server hostname (enables SFTP storage when set)")
+	sftpPort      = flag.String("sftp-port", "22", "SFTP server port")
+	sftpUser      = flag.String("sftp-user", "", "SFTP username")
+	sftpPassword  = flag.String("sftp-password", "", "SFTP password")
+	sftpPath      = flag.String("sftp-path", "/images", "base path on SFTP server")
 	databaseURL   = flag.String("database-url", "", "postgres connection string (or set DATABASE_URL)")
 	hmacKey       = flag.String("hmac-key", "", "hmac key for signing image URLs")
 	adminPassword = flag.String("admin-password", "", "password for the admin UI (or set PICSUM_ADMIN_PASSWORD)")
@@ -90,15 +96,39 @@ func main() {
 	log.Infof("database connected")
 
 	// ── Storage ───────────────────────────────────────────────────────────────
-	// Auto-create the storage directory so startup doesn't fail before a volume is mounted
-	if err := os.MkdirAll(*storagePath, 0755); err != nil {
-		log.Fatalf("error creating storage directory %q: %s", *storagePath, err)
+	var storageProvider interface {
+		Get(ctx context.Context, id string) ([]byte, error)
 	}
-	storage, err := fileStorage.New(*storagePath)
-	if err != nil {
-		log.Fatalf("error initializing storage at %q: %s", *storagePath, err)
+	var sftpProvider *sftpStorage.Provider // kept separate so admin can call Put/Delete
+
+	if *sftpHost != "" {
+		log.Infof("connecting to SFTP storage at %s:%s", *sftpHost, *sftpPort)
+		sftpProvider, err = sftpStorage.New(sftpStorage.Config{
+			Host:     *sftpHost,
+			Port:     *sftpPort,
+			User:     *sftpUser,
+			Password: *sftpPassword,
+			BasePath: *sftpPath,
+		})
+		if err != nil {
+			log.Fatalf("error connecting to SFTP: %s", err)
+		}
+		defer sftpProvider.Close()
+		storageProvider = sftpProvider
+		log.Infof("SFTP storage connected at %s%s", *sftpHost, *sftpPath)
+	} else {
+		// Local file storage fallback
+		if err := os.MkdirAll(*storagePath, 0755); err != nil {
+			log.Fatalf("error creating storage directory %q: %s", *storagePath, err)
+		}
+		var fileProvider *fileStorage.Provider
+		fileProvider, err = fileStorage.New(*storagePath)
+		if err != nil {
+			log.Fatalf("error initializing storage at %q: %s", *storagePath, err)
+		}
+		storageProvider = fileProvider
+		log.Infof("local file storage initialized at %s", *storagePath)
 	}
-	log.Infof("storage initialized at %s", *storagePath)
 
 	// ── Image processor ───────────────────────────────────────────────────────
 	cache := memory.New()
@@ -106,7 +136,7 @@ func main() {
 
 	h := &hmac.HMAC{Key: []byte(*hmacKey)}
 
-	imageProcessor, err := vips.New(shutdownCtx, log, tracer, *workers, image.NewCache(tracer, cache, storage))
+	imageProcessor, err := vips.New(shutdownCtx, log, tracer, *workers, image.NewCache(tracer, cache, storageProvider))
 	if err != nil {
 		log.Fatalf("error initializing image processor: %s", err)
 	}
@@ -119,7 +149,7 @@ func main() {
 	checker := &health.Checker{
 		Ctx:      checkerCtx,
 		Database: db,
-		Storage:  storage,
+		Storage:  storageProvider,
 		Cache:    cache,
 		Log:      log,
 	}
@@ -144,7 +174,7 @@ func main() {
 	if *adminPassword == "" {
 		*adminPassword = os.Getenv("PICSUM_ADMIN_PASSWORD")
 	}
-	adminUI, err := admin.New(db, *storagePath, *adminPassword, *rootURL)
+	adminUI, err := admin.New(db, *storagePath, sftpProvider, *adminPassword, *rootURL)
 	if err != nil {
 		log.Fatalf("error initializing admin UI: %s", err)
 	}

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/DMarby/picsum-photos/internal/database/postgres"
+	sftpStorage "github.com/DMarby/picsum-photos/internal/storage/sftp"
 	"github.com/gorilla/mux"
 )
 
@@ -24,17 +25,18 @@ var templateFS embed.FS
 
 // Admin holds dependencies for the admin UI
 type Admin struct {
-	DB          *postgres.Provider
-	StoragePath string
-	Password    string
-	RootURL     string
-	templates   *template.Template
+	DB           *postgres.Provider
+	StoragePath  string
+	SFTP         *sftpStorage.Provider // nil when using local file storage
+	Password     string
+	RootURL      string
+	templates    *template.Template
 }
 
 var sessionToken = fmt.Sprintf("sess_%d", time.Now().UnixNano())
 
 // New creates an Admin instance and parses templates.
-func New(db *postgres.Provider, storagePath, password, rootURL string) (*Admin, error) {
+func New(db *postgres.Provider, storagePath string, sftp *sftpStorage.Provider, password, rootURL string) (*Admin, error) {
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		"map": func(kv ...any) map[string]any {
 			m := make(map[string]any)
@@ -66,6 +68,7 @@ func New(db *postgres.Provider, storagePath, password, rootURL string) (*Admin, 
 	return &Admin{
 		DB:          db,
 		StoragePath: storagePath,
+		SFTP:        sftp,
 		Password:    password,
 		RootURL:     rootURL,
 		templates:   tmpl,
@@ -201,10 +204,18 @@ func (a *Admin) handleUpload(w http.ResponseWriter, r *http.Request) {
 		imgURL = header.Filename
 	}
 
-	destPath := filepath.Join(a.StoragePath, id+".jpg")
-	if err := os.WriteFile(destPath, data, 0644); err != nil {
-		http.Redirect(w, r, "/admin/photos?error=Failed+to+save+file", http.StatusFound)
-		return
+	// Write file to storage (SFTP or local)
+	if a.SFTP != nil {
+		if err := a.SFTP.Put(id, data); err != nil {
+			http.Redirect(w, r, "/admin/photos?error=Failed+to+save+file+to+SFTP", http.StatusFound)
+			return
+		}
+	} else {
+		destPath := filepath.Join(a.StoragePath, id+".jpg")
+		if err := os.WriteFile(destPath, data, 0644); err != nil {
+			http.Redirect(w, r, "/admin/photos?error=Failed+to+save+file", http.StatusFound)
+			return
+		}
 	}
 
 	_, err = a.DB.Pool().Exec(r.Context(),
@@ -213,7 +224,11 @@ func (a *Admin) handleUpload(w http.ResponseWriter, r *http.Request) {
 		id, author, imgURL, width, height, tags,
 	)
 	if err != nil {
-		os.Remove(destPath)
+		if a.SFTP != nil {
+			_ = a.SFTP.Delete(id)
+		} else {
+			os.Remove(filepath.Join(a.StoragePath, id+".jpg"))
+		}
 		http.Redirect(w, r, "/admin/photos?error=Database+error", http.StatusFound)
 		return
 	}
@@ -226,7 +241,11 @@ func (a *Admin) handleDelete(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/photos?error=Delete+failed", http.StatusFound)
 		return
 	}
-	os.Remove(filepath.Join(a.StoragePath, id+".jpg"))
+	if a.SFTP != nil {
+		_ = a.SFTP.Delete(id)
+	} else {
+		os.Remove(filepath.Join(a.StoragePath, id+".jpg"))
+	}
 	http.Redirect(w, r, "/admin/photos?success=Photo+deleted", http.StatusFound)
 }
 
