@@ -1,91 +1,55 @@
 # Deploying to Railway
 
-This repo runs as **two Railway services** plus a **PostgreSQL database**:
-
-| Service | Dockerfile | Purpose |
-|---|---|---|
-| `picsum-api` | `Dockerfile.picsum` | Public API — `/200/300`, `/seed/abc/200/300`, `/id/1/200/300` |
-| `image-service` | `Dockerfile.image-service` | Internal image processor (crop, resize, blur via libvips) |
-| Postgres | Railway plugin | Stores image metadata (id, author, url, width, height) |
+One service. One Dockerfile. Done.
 
 ---
 
 ## 1. Create a Railway project
 
-1. Go to [railway.app](https://railway.app) → **New Project → Deploy from GitHub repo**
+1. [railway.app](https://railway.app) → **New Project → Deploy from GitHub repo**
 2. Select `BMatsko/picsum-photos`
-3. Railway creates one service — rename it `picsum-api`
 
 ---
 
-## 2. Add the image-service
+## 2. Add PostgreSQL
 
-1. In the same project, **+ New → GitHub Repo** (same repo)
-2. Rename this service `image-service`
+1. In your project → **+ New → Database → PostgreSQL**
+2. That's it — Railway automatically injects `DATABASE_URL` into your service
 
----
-
-## 3. Set Dockerfile paths
-
-For each service go to **Settings → Build → Dockerfile Path**:
-
-- `picsum-api` → `Dockerfile.picsum`
-- `image-service` → `Dockerfile.image-service`
+The app creates the `images` table on first boot. No migrations to run manually.
 
 ---
 
-## 4. Add PostgreSQL
+## 3. Add a Volume for your photos
 
-1. In your project, **+ New → Database → PostgreSQL**
-2. Railway provisions a Postgres instance and automatically injects `DATABASE_URL` into **all services in the project**
-3. `picsum-api` will pick it up automatically on startup — no extra config needed
+1. Click your service → **+ New → Volume**
+2. Mount path: `/data`
 
-The app creates the `images` table on first boot via `CREATE TABLE IF NOT EXISTS`.
-
----
-
-## 5. Add a Volume for photo files
-
-The `image-service` needs your JPEG files on disk.
-
-1. **+ New → Volume** → mount to `image-service` at `/data`
-2. Upload your photos via the Railway volume browser or CLI:
-   ```bash
-   railway volume cp ./your-photos/ <volume-id>:/data/images/
-   ```
-
-Files must be named `<id>.jpg` matching the `id` column in Postgres (e.g. `1.jpg`, `2.jpg`).
+Your JPEG files go in `/data/images/` inside the volume.  
+File naming: `1.jpg`, `2.jpg`, etc. — must match the `id` column in the database.
 
 ---
 
-## 6. Set environment variables
+## 4. Environment variables
 
-### picsum-api
+Set these in **your service → Variables tab**:
 
-| Variable | Value |
-|---|---|
-| `PICSUM_IMAGE_SERVICE_URL` | Internal URL of `image-service`, e.g. `https://image-service.railway.internal` |
-| `PICSUM_ROOT_URL` | Public URL of `picsum-api`, e.g. `https://picsum-api.up.railway.app` |
-| `PICSUM_HMAC_KEY` | A long random secret (shared with image-service) |
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | Auto | Injected by Railway Postgres — **do not set manually** |
+| `PICSUM_HMAC_KEY` | **Yes** | Any random secret string. Generate with: `openssl rand -hex 32` |
+| `PICSUM_ROOT_URL` | No | Your public URL e.g. `https://yourapp.up.railway.app`. Auto-detected from `RAILWAY_PUBLIC_DOMAIN` if not set |
+| `PICSUM_STORAGE_PATH` | No | Path to JPEG directory. Defaults to `/data/images` |
+| `PORT` | Auto | Injected by Railway — **do not set manually** |
 
-> `DATABASE_URL` is injected automatically by Railway — do not set it manually.
-
-### image-service
-
-| Variable | Value |
-|---|---|
-| `IMAGE_HMAC_KEY` | Same secret as `PICSUM_HMAC_KEY` |
-
-Generate a strong HMAC key:
-```bash
-openssl rand -hex 32
-```
+**Minimum required:** just `PICSUM_HMAC_KEY`. Everything else is automatic.
 
 ---
 
-## 7. Seed your photo database
+## 5. Seed your photos
 
-Once `picsum-api` is running, insert rows into the `images` table via the Railway Postgres shell (**Database → Connect → psql**):
+Once deployed, open the Railway Postgres shell:  
+**Database → Connect → psql** (or use any Postgres client with the connection string)
 
 ```sql
 INSERT INTO images (id, author, url, width, height) VALUES
@@ -93,28 +57,30 @@ INSERT INTO images (id, author, url, width, height) VALUES
   ('2', 'Your Name', 'https://your-site.com', 4000, 3000);
 ```
 
-Each `id` must match a file in `/data/images/` on the `image-service` volume (e.g. `1.jpg`).
+Then upload matching JPEGs to `/data/images/` on the Volume.
 
-To auto-detect real dimensions from JPEGs locally before inserting:
+To auto-detect real dimensions from your JPEGs locally:
 ```bash
 go run ./cmd/image-manifest -image-path ./your-photos -image-manifest-path ./metadata.json
 ```
-Then read the JSON output for the correct width/height values.
 
 ---
 
-## 8. Seeding reference
+## 6. URL reference
 
-| Endpoint | Behaviour |
+| URL | Result |
 |---|---|
-| `/200/300` | Random image, different every request |
-| `/seed/abc/200/300` | Always the same image for seed `"abc"` (murmur3 hash → deterministic) |
-| `/id/1/200/300` | Always the image with `id = '1'` |
-
-Seeds are stable as long as the **order of rows** (sorted by `id`) doesn't change.
+| `/200/300` | Random image, 200×300 |
+| `/seed/hello/200/300` | Always the same image for seed `hello` |
+| `/id/1/200/300` | Always image with id `1` |
+| `/id/1/200/300?grayscale` | Grayscale |
+| `/id/1/200/300?blur=5` | Blurred |
+| `/v2/list` | JSON list of all images |
+| `/id/1/info` | JSON metadata for image `1` |
 
 ---
 
-## 9. Deploy
+## 7. Redeploy
 
-Railway auto-deploys on every push to `main`. Force a redeploy any time from **Deployments → Redeploy**.
+Railway auto-deploys on every push to `main`.  
+Force a manual redeploy: **Deployments → Redeploy**.
