@@ -58,6 +58,10 @@
           Clear by tag
         </button>
       </form>
+      <!-- Clear untagged -->
+      <form method="POST" action="/admin/seeds/clear-untagged" onsubmit="return confirm('Clear all seeds with no tag?')">
+        <button type="submit" class="btn btn-danger" style="font-size:12px;padding:6px 12px;">Clear untagged</button>
+      </form>
       <!-- Clear all -->
       <form method="POST" action="/admin/seeds/clear" onsubmit="return confirm('Clear ALL seed resolutions?')">
         <input type="hidden" name="seed" value="">

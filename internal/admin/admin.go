@@ -88,6 +88,8 @@ func (a *Admin) Router() http.Handler {
 	r.HandleFunc("/admin/photos/{id}/tags", a.auth(a.handleUpdateTags)).Methods("POST")
 	r.HandleFunc("/admin/seeds", a.auth(a.handleSeeds)).Methods("GET")
 	r.HandleFunc("/admin/seeds/clear", a.auth(a.handleClearSeed)).Methods("POST")
+	r.HandleFunc("/admin/seeds/clear-by-tag", a.auth(a.handleClearSeedsByTag)).Methods("POST")
+	r.HandleFunc("/admin/seeds/clear-untagged", a.auth(a.handleClearUntaggedSeeds)).Methods("POST")
 	r.HandleFunc("/admin/docs", a.auth(a.handleDocs)).Methods("GET")
 	r.HandleFunc("/admin/apikeys", a.auth(a.handleAPIKeys)).Methods("GET")
 	r.HandleFunc("/admin/apikeys/create", a.auth(a.handleCreateAPIKey)).Methods("POST")
@@ -327,6 +329,17 @@ func (a *Admin) handleClearSeedsByTag(w http.ResponseWriter, r *http.Request) {
 	}
 	n := result.RowsAffected()
 	http.Redirect(w, r, fmt.Sprintf("/admin/seeds?success=Cleared+%d+seed%%28s%%29+with+tag+%%22%s%%22", n, tag), http.StatusFound)
+}
+
+func (a *Admin) handleClearUntaggedSeeds(w http.ResponseWriter, r *http.Request) {
+	result, err := a.DB.Pool().Exec(r.Context(),
+		`DELETE FROM seed_resolutions WHERE tag = ''`)
+	if err != nil {
+		http.Redirect(w, r, "/admin/seeds?error=Failed+to+clear+untagged+seeds", http.StatusFound)
+		return
+	}
+	n := result.RowsAffected()
+	http.Redirect(w, r, fmt.Sprintf("/admin/seeds?success=Cleared+%d+untagged+seed%%28s%%29", n), http.StatusFound)
 }
 
 func (a *Admin) handleClearSeed(w http.ResponseWriter, r *http.Request) {

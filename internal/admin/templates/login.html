@@ -7,20 +7,20 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iOTAiIGhlaWdodD0iMTEwIiB2aWV3Qm94PSIwIDAgOTAgMTEwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZD0iTTEwIDZDMTAgOC4yMDkxNCAxMS43OTA5IDEwIDE0IDEwSDQ4LjM0MzhDNDkuNDA0NCAxMC4wMDAyIDUwLjQyMTkgMTAuNDIxOSA1MS4xNzE5IDExLjE3MTlMNjguODI4MSAyOC44MjgxQzY5LjU3ODEgMjkuNTc4MSA2OS45OTk4IDMwLjU5NTYgNzAgMzEuNjU2MlY0NkM3MCA0OC4yMDkxIDcxLjc5MDkgNTAgNzQgNTBIODZDODguMjA5MSA1MCA5MCA1MS43OTA5IDkwIDU0VjkwQzkwIDEwMS4wNDYgODEuMDQ1NyAxMTAgNzAgMTEwSDE0QzExLjc5MDkgMTEwIDEwIDEwOC4yMDkgMTAgMTA2Vjk0QzEwIDkxLjc5MDkgOC4yMDkxNCA5MCA2IDkwSDRDMS43OTA4NiA5MCAxLjEyNzQ3ZS0wNyA4OC4yMDkxIDAgODZWMzRDMCAzMS43OTA5IDEuNzkwODYgMzAgNCAzMEg2QzguMjA5MTQgMzAgMTAgMjguMjA5MSAxMCAyNlYxNEMxMCAxMS43OTA5IDguMjA5MTQgMTAgNiAxMEg1QzIuMjM4NTggMTAgMCA3Ljc2MTQyIDAgNUMwIDIuMjM4NTggMi4yMzg1OCAwIDUgMEM3Ljc2MTQyIDAgMTAgMi4yMzg1OCAxMCA1VjZaTTE0IDMwQzExLjc5MDkgMzAgMTAgMzEuNzkwOSAxMCAzNFY4NkMxMCA4OC4yMDkxIDExLjc5MDkgOTAgMTQgOTBINjZDNjguMjA5MSA5MCA3MCA4OC4yMDkxIDcwIDg2VjU0QzcwIDUxLjc5MDkgNjguMjA5MSA1MCA2NiA1MEg1NEM1MS43OTA5IDUwIDUwIDQ4LjIwOTEgNTAgNDZWMzRDNTAgMzEuNzkwOSA0OC4yMDkxIDMwIDQ2IDMwSDE0WiIgZmlsbD0idXJsKCNwYWludDBfbGluZWFyXzFfMykiLz4KPGRlZnM+CjxsaW5lYXJHcmFkaWVudCBpZD0icGFpbnQwX2xpbmVhcl8xXzMiIHgxPSIwIiB5MT0iMCIgeDI9IjEwMCIgeTI9IjE0NiIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgo8c3RvcCBzdG9wLWNvbG9yPSIjMEUxQUZEIi8+CjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI0U0QkZGMSIvPgo8L2xpbmVhckdyYWRpZW50Pgo8L2RlZnM+Cjwvc3ZnPgo=">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root { --bg: #0f0f0f; --surface: #1a1a1a; --border: #2a2a2a; --accent: #e8e8e8; --text: #d4d4d4; --muted: #666; --radius: 6px; }
+  :root { --bg: #f5f5f5; --surface: #ffffff; --border: #e0e0e0; --accent: #111; --text: #1a1a1a; --muted: #888; --radius: 6px; }
   body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-  .box { width: 360px; }
-  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 32px; }
-  .brand svg { width: 20px; height: 24px; flex-shrink: 0; }
-  .brand span { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-  h1 { font-size: 22px; font-weight: 600; color: var(--accent); margin-bottom: 8px; }
-  p { color: var(--muted); font-size: 13px; margin-bottom: 32px; }
-  label { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
-  input[type=password] { width: 100%; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 14px; outline: none; margin-bottom: 16px; transition: border-color 0.15s; }
-  input:focus { border-color: #555; }
-  button { width: 100%; padding: 11px; background: var(--accent); color: #0f0f0f; border: none; border-radius: var(--radius); font-size: 14px; font-weight: 600; cursor: pointer; }
-  button:hover { opacity: 0.9; }
-  .error { background: rgba(192,57,43,0.1); border: 1px solid rgba(192,57,43,0.3); color: #e74c3c; padding: 10px 14px; border-radius: var(--radius); font-size: 13px; margin-bottom: 20px; }
+  .box { width: 360px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 40px; }
+  .brand { display: flex; align-items: center; gap: 9px; margin-bottom: 32px; }
+  .brand svg { width: 18px; height: 22px; flex-shrink: 0; }
+  .brand span { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: #333; }
+  h1 { font-size: 22px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+  p { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+  label { display: block; font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.05em; }
+  input[type=password] { width: 100%; padding: 9px 12px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 13px; outline: none; margin-bottom: 16px; transition: border-color 0.15s, box-shadow 0.15s; }
+  input:focus { border-color: #0E1AFD; box-shadow: 0 0 0 3px rgba(14,26,253,.08); }
+  button { width: 100%; padding: 10px; background: #111; color: #fff; border: none; border-radius: var(--radius); font-size: 14px; font-weight: 600; cursor: pointer; transition: background .12s; }
+  button:hover { background: #333; }
+  .error { background: #fdf0ef; border: 1px solid #f0b8b4; color: #b93126; padding: 10px 14px; border-radius: var(--radius); font-size: 13px; margin-bottom: 20px; }
 </style>
 </head>
 <body>
