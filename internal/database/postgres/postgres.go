@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS images (
 	tags    TEXT[] NOT NULL DEFAULT '{}'
 );
 
+-- Add tags column to existing tables that predate it
+ALTER TABLE images ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
+
 CREATE TABLE IF NOT EXISTS seed_resolutions (
 	seed       TEXT PRIMARY KEY,
 	image_id   TEXT NOT NULL REFERENCES images(id) ON DELETE CASCADE,
