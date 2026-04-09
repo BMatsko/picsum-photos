@@ -1,0 +1,254 @@
+package admin
+
+import (
+	"crypto/subtle"
+	"embed"
+	"fmt"
+	"html/template"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/DMarby/picsum-photos/internal/database"
+	"github.com/DMarby/picsum-photos/internal/database/postgres"
+	"github.com/gorilla/mux"
+)
+
+//go:embed templates/*
+var templateFS embed.FS
+
+// Admin holds dependencies for the admin UI
+type Admin struct {
+	DB          *postgres.Provider
+	StoragePath string
+	Password    string
+	RootURL     string
+	templates   *template.Template
+}
+
+// sessionToken is a simple in-memory session (resets on restart)
+var sessionToken = fmt.Sprintf("sess_%d", time.Now().UnixNano())
+
+// New creates an Admin instance and parses templates
+func New(db *postgres.Provider, storagePath, password, rootURL string) (*Admin, error) {
+	tmpl, err := template.New("").Funcs(template.FuncMap{
+		"map": func(kv ...any) map[string]any {
+			m := make(map[string]any)
+			for i := 0; i+1 < len(kv); i += 2 {
+				m[fmt.Sprint(kv[i])] = kv[i+1]
+			}
+			return m
+		},
+		"not": func(v any) bool {
+			if v == nil { return true }
+			switch t := v.(type) {
+			case bool: return !t
+			case int: return t == 0
+			case string: return t == ""
+			default: return false
+			}
+		},
+	}).ParseFS(templateFS, "templates/*.html")
+	if err != nil {
+		return nil, fmt.Errorf("parsing admin templates: %w", err)
+	}
+	return &Admin{
+		DB:          db,
+		StoragePath: storagePath,
+		Password:    password,
+		RootURL:     rootURL,
+		templates:   tmpl,
+	}, nil
+}
+
+// Router returns the admin HTTP handler
+func (a *Admin) Router() http.Handler {
+	r := mux.NewRouter()
+	r.HandleFunc("/admin/login", a.handleLoginPage).Methods("GET")
+	r.HandleFunc("/admin/login", a.handleLoginSubmit).Methods("POST")
+	r.HandleFunc("/admin/logout", a.handleLogout).Methods("POST")
+	r.HandleFunc("/admin", a.auth(a.handleDashboard)).Methods("GET")
+	r.HandleFunc("/admin/photos", a.auth(a.handlePhotos)).Methods("GET")
+	r.HandleFunc("/admin/photos/upload", a.auth(a.handleUpload)).Methods("POST")
+	r.HandleFunc("/admin/photos/{id}/delete", a.auth(a.handleDelete)).Methods("POST")
+	r.HandleFunc("/admin/seeds", a.auth(a.handleSeeds)).Methods("GET")
+	r.HandleFunc("/admin/docs", a.auth(a.handleDocs)).Methods("GET")
+	return r
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+func (a *Admin) auth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("admin_session")
+		if err != nil || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(sessionToken)) != 1 {
+			http.Redirect(w, r, "/admin/login", http.StatusFound)
+			return
+		}
+		next(w, r)
+	}
+}
+
+// ── Handlers ──────────────────────────────────────────────────────────────────
+
+func (a *Admin) handleLoginPage(w http.ResponseWriter, r *http.Request) {
+	a.render(w, "login.html", map[string]any{
+		"Error": r.URL.Query().Get("error"),
+	})
+}
+
+func (a *Admin) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
+	if subtle.ConstantTimeCompare([]byte(r.FormValue("password")), []byte(a.Password)) != 1 {
+		http.Redirect(w, r, "/admin/login?error=Invalid+password", http.StatusFound)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "admin_session",
+		Value:    sessionToken,
+		Path:     "/admin",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, "/admin", http.StatusFound)
+}
+
+func (a *Admin) handleLogout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:   "admin_session",
+		Value:  "",
+		Path:   "/admin",
+		MaxAge: -1,
+	})
+	http.Redirect(w, r, "/admin/login", http.StatusFound)
+}
+
+func (a *Admin) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	images, _ := a.DB.ListAll(r.Context())
+	a.render(w, "dashboard.html", map[string]any{
+		"PhotoCount": len(images),
+		"RootURL":    a.RootURL,
+	})
+}
+
+func (a *Admin) handlePhotos(w http.ResponseWriter, r *http.Request) {
+	images, err := a.DB.ListAll(r.Context())
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	a.render(w, "photos.html", map[string]any{
+		"Images":  images,
+		"RootURL": a.RootURL,
+		"Success": r.URL.Query().Get("success"),
+		"Error":   r.URL.Query().Get("error"),
+	})
+}
+
+func (a *Admin) handleUpload(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(100 << 20); err != nil {
+		http.Redirect(w, r, "/admin/photos?error=Form+parse+error", http.StatusFound)
+		return
+	}
+
+	id := strings.TrimSpace(r.FormValue("id"))
+	author := strings.TrimSpace(r.FormValue("author"))
+	imgURL := strings.TrimSpace(r.FormValue("url"))
+
+	var width, height int
+	fmt.Sscan(r.FormValue("width"), &width)
+	fmt.Sscan(r.FormValue("height"), &height)
+
+	if id == "" || author == "" {
+		http.Redirect(w, r, "/admin/photos?error=ID+and+Author+are+required", http.StatusFound)
+		return
+	}
+
+	file, _, err := r.FormFile("photo")
+	if err != nil {
+		http.Redirect(w, r, "/admin/photos?error=No+photo+file+provided", http.StatusFound)
+		return
+	}
+	defer file.Close()
+
+	destPath := filepath.Join(a.StoragePath, id+".jpg")
+	dest, err := os.Create(destPath)
+	if err != nil {
+		http.Redirect(w, r, "/admin/photos?error=Failed+to+save+file", http.StatusFound)
+		return
+	}
+	defer dest.Close()
+	if _, err := io.Copy(dest, file); err != nil {
+		http.Redirect(w, r, "/admin/photos?error=Failed+to+write+file", http.StatusFound)
+		return
+	}
+
+	_, err = a.DB.Pool().Exec(r.Context(),
+		`INSERT INTO images (id, author, url, width, height) VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (id) DO UPDATE SET author=$2, url=$3, width=$4, height=$5`,
+		id, author, imgURL, width, height,
+	)
+	if err != nil {
+		os.Remove(destPath)
+		http.Redirect(w, r, "/admin/photos?error=Database+error", http.StatusFound)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/photos?success=Photo+uploaded+successfully", http.StatusFound)
+}
+
+func (a *Admin) handleDelete(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	if _, err := a.DB.Pool().Exec(r.Context(), `DELETE FROM images WHERE id = $1`, id); err != nil {
+		http.Redirect(w, r, "/admin/photos?error=Delete+failed", http.StatusFound)
+		return
+	}
+	os.Remove(filepath.Join(a.StoragePath, id+".jpg"))
+	http.Redirect(w, r, "/admin/photos?success=Photo+deleted", http.StatusFound)
+}
+
+func (a *Admin) handleSeeds(w http.ResponseWriter, r *http.Request) {
+	images, _ := a.DB.ListAll(r.Context())
+	a.render(w, "seeds.html", map[string]any{
+		"Images":  images,
+		"RootURL": a.RootURL,
+	})
+}
+
+func (a *Admin) handleDocs(w http.ResponseWriter, r *http.Request) {
+	a.render(w, "docs.html", map[string]any{
+		"RootURL": a.RootURL,
+	})
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+func (a *Admin) render(w http.ResponseWriter, tmpl string, data any) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := a.templates.ExecuteTemplate(w, tmpl, data); err != nil {
+		http.Error(w, "Template error: "+err.Error(), 500)
+	}
+}
+
+// SeedExample is used in the seeds view
+type SeedExample struct {
+	Seed string
+	URL  string
+}
+
+// BuildSeedURLs generates example seed URLs for display
+func BuildSeedURLs(rootURL string, seeds []string, width, height int) []SeedExample {
+	out := make([]SeedExample, len(seeds))
+	for i, s := range seeds {
+		out[i] = SeedExample{
+			Seed: s,
+			URL:  fmt.Sprintf("%s/seed/%s/%d/%d", rootURL, s, width, height),
+		}
+	}
+	return out
+}
+
+// unused import guard
+var _ = database.Image{}

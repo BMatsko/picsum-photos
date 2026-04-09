@@ -1,0 +1,60 @@
+{{define "seeds.html"}}<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Seeds — Picsum Admin</title>{{template "style" .}}</head>
+<body>{{template "nav" (map "Page" "seeds")}}
+<main>
+<h1>Seeds</h1>
+<p class="sub">Seeds are deterministic — the same seed string always returns the same photo. Hash algorithm: murmur3.</p>
+
+<div class="card">
+  <h2>How seeding works</h2>
+  <p style="color:var(--muted);font-size:13px;line-height:1.8;">
+    Any string can be a seed. The seed is hashed with <strong style="color:var(--text);">murmur3</strong> into an int64, which seeds a Go <code>rand.New()</code>, and <code>Intn(len(photos))</code> picks the photo. The result is stable as long as the <strong style="color:var(--text);">order of photos</strong> (sorted by ID) does not change.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Try seeds</h2>
+  <table>
+    <thead><tr><th>Seed</th><th>400 × 300</th><th>200 × 200</th><th>1200 × 400</th></tr></thead>
+    <tbody>
+    {{range .Images}}
+    <tr>
+      <td><code>{{.ID}}</code></td>
+      <td><a class="link" href="{{$.RootURL}}/seed/{{.ID}}/400/300" target="_blank">{{$.RootURL}}/seed/{{.ID}}/400/300</a></td>
+      <td><a class="link" href="{{$.RootURL}}/seed/{{.ID}}/200/200" target="_blank">/seed/{{.ID}}/200/200</a></td>
+      <td><a class="link" href="{{$.RootURL}}/seed/{{.ID}}/1200/400" target="_blank">/seed/{{.ID}}/1200/400</a></td>
+    </tr>
+    {{end}}
+    {{if not .Images}}
+    <tr><td colspan="4" style="color:var(--muted);font-size:13px;">No photos in library yet.</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Custom seed tester</h2>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:14px;">Type any string to generate a seed URL.</p>
+  <div style="display:flex;gap:10px;align-items:center;">
+    <input type="text" id="seedInput" placeholder="my-custom-seed" style="max-width:300px;">
+    <select id="seedW" style="padding:9px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);">
+      <option>400</option><option>800</option><option>1200</option><option>200</option>
+    </select>
+    <span style="color:var(--muted);">×</span>
+    <select id="seedH" style="padding:9px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);">
+      <option>300</option><option>600</option><option>400</option><option>200</option>
+    </select>
+    <button class="btn btn-primary" onclick="openSeed()">Open →</button>
+  </div>
+</div>
+<script>
+function openSeed(){
+  var s=document.getElementById('seedInput').value.trim()||'hello';
+  var w=document.getElementById('seedW').value;
+  var h=document.getElementById('seedH').value;
+  window.open('{{.RootURL}}/seed/'+encodeURIComponent(s)+'/'+w+'/'+h,'_blank');
+}
+document.getElementById('seedInput').addEventListener('keydown',function(e){if(e.key==='Enter')openSeed();});
+</script>
+</main></body></html>
+{{end}}

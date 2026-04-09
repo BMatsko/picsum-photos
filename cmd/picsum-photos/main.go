@@ -23,6 +23,7 @@ import (
 
 	postgresDatabase "github.com/DMarby/picsum-photos/internal/database/postgres"
 	fileStorage "github.com/DMarby/picsum-photos/internal/storage/file"
+	"github.com/DMarby/picsum-photos/internal/admin"
 	"github.com/DMarby/picsum-photos/internal/handler"
 	"github.com/DMarby/picsum-photos/internal/health"
 	"github.com/DMarby/picsum-photos/internal/logger"
@@ -40,6 +41,7 @@ var (
 	storagePath   = flag.String("storage-path", "/data/images", "path to the directory containing image JPEGs")
 	databaseURL   = flag.String("database-url", "", "postgres connection string (or set DATABASE_URL)")
 	hmacKey       = flag.String("hmac-key", "", "hmac key for signing image URLs")
+	adminPassword = flag.String("admin-password", "", "password for the admin UI (or set PICSUM_ADMIN_PASSWORD)")
 	workers       = flag.Int("workers", 3, "image processing worker concurrency")
 	loglevel      = zap.LevelFlag("log-level", zap.InfoLevel, "log level (debug, info, warn, error)")
 )
@@ -138,6 +140,15 @@ func main() {
 	}
 	log.Infof("root URL: %s", *rootURL)
 
+	// ── Admin UI ─────────────────────────────────────────────────────────────
+	if *adminPassword == "" {
+		*adminPassword = os.Getenv("PICSUM_ADMIN_PASSWORD")
+	}
+	adminUI, err := admin.New(db, *storagePath, *adminPassword, *rootURL)
+	if err != nil {
+		log.Fatalf("error initializing admin UI: %s", err)
+	}
+
 	// ── Routers ───────────────────────────────────────────────────────────────
 	imgAPI := imageapi.NewAPI(imageProcessor, log, tracer, cmd.HandlerTimeout, h)
 
@@ -158,8 +169,17 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/health", handler.Health(checker))
+	mux.Handle("/admin", adminUI.Router())
+	mux.Handle("/admin/", adminUI.Router())
 	mux.Handle("/id/", imgAPI.Router())
-	mux.Handle("/", mainRouter)
+	// Redirect root to admin
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.Redirect(w, r, "/admin", http.StatusFound)
+			return
+		}
+		mainRouter.ServeHTTP(w, r)
+	})
 
 	server := &http.Server{
 		Handler:      mux,

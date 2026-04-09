@@ -129,3 +129,8 @@ func (p *Provider) list(ctx context.Context, offset, limit int) ([]database.Imag
 	}
 	return images, nil
 }
+
+// Pool exposes the underlying pgxpool for direct queries (e.g. admin UI).
+func (p *Provider) Pool() *pgxpool.Pool {
+	return p.pool
+}

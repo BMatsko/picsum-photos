@@ -1,0 +1,25 @@
+{{define "dashboard.html"}}<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Dashboard — Picsum Admin</title>{{template "style" .}}</head>
+<body>{{template "nav" (map "Page" "dashboard")}}
+<main>
+<h1>Dashboard</h1>
+<p class="sub">Photo randomizer at <a class="link" href="{{.RootURL}}">{{.RootURL}}</a></p>
+<div style="display:grid;grid-template-columns:repeat(2,160px);gap:14px;margin-bottom:28px;">
+  <div class="stat"><div class="num">{{.PhotoCount}}</div><div class="lbl">Photos</div></div>
+  <div class="stat"><div class="num" style="font-size:16px;padding-top:10px;">Active</div><div class="lbl">Service</div></div>
+</div>
+<div class="card">
+  <h2>Quick links</h2>
+  <table><tbody>
+    <tr><td><code>{{.RootURL}}/200/300</code></td><td><a class="link" href="{{.RootURL}}/200/300" target="_blank">Random image →</a></td></tr>
+    <tr><td><code>{{.RootURL}}/seed/hello/400/300</code></td><td><a class="link" href="{{.RootURL}}/seed/hello/400/300" target="_blank">Seeded image →</a></td></tr>
+    <tr><td><code>{{.RootURL}}/v2/list</code></td><td><a class="link" href="{{.RootURL}}/v2/list" target="_blank">Photo list JSON →</a></td></tr>
+  </tbody></table>
+</div>
+<div style="display:flex;gap:10px;">
+  <a href="/admin/photos" class="btn btn-primary">Manage photos</a>
+  <a href="/admin/seeds" class="btn btn-ghost">View seeds</a>
+  <a href="/admin/docs" class="btn btn-ghost">API docs</a>
+</div>
+</main></body></html>
+{{end}}

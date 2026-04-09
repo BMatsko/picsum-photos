@@ -1,0 +1,55 @@
+{{define "photos.html"}}<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Photos — Picsum Admin</title>{{template "style" .}}</head>
+<body>{{template "nav" (map "Page" "photos")}}
+<main>
+<h1>Photos</h1>
+<p class="sub">Manage your image library. Each photo needs a matching <code>&lt;id&gt;.jpg</code> file in the storage volume.</p>
+
+{{if .Success}}<div class="alert alert-ok">{{.Success}}</div>{{end}}
+{{if .Error}}<div class="alert alert-err">{{.Error}}</div>{{end}}
+
+<div class="card">
+  <h2>Upload a photo</h2>
+  <form method="POST" action="/admin/photos/upload" enctype="multipart/form-data">
+    <div class="g3" style="margin-bottom:14px;">
+      <div class="frow"><label>ID <span style="color:#c0392b">*</span></label><input type="text" name="id" placeholder="e.g. 42" required></div>
+      <div class="frow"><label>Author <span style="color:#c0392b">*</span></label><input type="text" name="author" placeholder="e.g. Jane Doe" required></div>
+      <div class="frow"><label>Source URL</label><input type="text" name="url" placeholder="https://example.com"></div>
+    </div>
+    <div class="g3" style="margin-bottom:14px;">
+      <div class="frow"><label>Width (px)</label><input type="number" name="width" placeholder="e.g. 5616"></div>
+      <div class="frow"><label>Height (px)</label><input type="number" name="height" placeholder="e.g. 3744"></div>
+      <div class="frow"><label>JPEG File <span style="color:#c0392b">*</span></label><input type="file" name="photo" accept="image/jpeg" required></div>
+    </div>
+    <button type="submit" class="btn btn-primary">Upload photo</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Library ({{len .Images}} photos)</h2>
+  {{if .Images}}
+  <table>
+    <thead><tr><th>Preview</th><th>ID</th><th>Author</th><th>Dimensions</th><th>URL</th><th></th></tr></thead>
+    <tbody>
+    {{range .Images}}
+    <tr>
+      <td><img class="thumb" src="{{$.RootURL}}/id/{{.ID}}/112/76" alt="" loading="lazy"></td>
+      <td><code>{{.ID}}</code></td>
+      <td>{{.Author}}</td>
+      <td style="color:var(--muted);font-size:12px;">{{.Width}} × {{.Height}}</td>
+      <td style="font-size:12px;"><a class="link" href="{{.URL}}" target="_blank">{{.URL}}</a></td>
+      <td>
+        <form method="POST" action="/admin/photos/{{.ID}}/delete" onsubmit="return confirm('Delete photo {{.ID}}?')">
+          <button type="submit" class="btn btn-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p style="color:var(--muted);font-size:13px;">No photos yet. Upload your first one above.</p>
+  {{end}}
+</div>
+</main></body></html>
+{{end}}
