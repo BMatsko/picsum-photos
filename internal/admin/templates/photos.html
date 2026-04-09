@@ -148,9 +148,27 @@ document.getElementById('photoFile').addEventListener('change', async function(e
 
 // ── Bulk import ────────────────────────────────────────────────────────────
 var bulkFiles = [];
+var bulkDupes = []; // true/false per file index
+
+function checkDuplicate(file, dim, existingImages) {
+  var nameLower = file.name.toLowerCase();
+  for (var j = 0; j < existingImages.length; j++) {
+    var img = existingImages[j];
+    // Match by filename (url field)
+    if (img.url && img.url.toLowerCase() === nameLower) {
+      return {match: 'filename', id: img.id, author: img.author};
+    }
+    // Match by dimensions + approximate file size (within 5%)
+    if (dim.w && img.width === dim.w && img.height === dim.h) {
+      return {match: 'dimensions', id: img.id, author: img.author};
+    }
+  }
+  return null;
+}
 
 document.getElementById('bulkFiles').addEventListener('change', async function(e) {
   bulkFiles = Array.from(e.target.files);
+  bulkDupes = [];
   var rows = document.getElementById('bulkRows');
   rows.innerHTML = '';
   document.getElementById('bulkSummary').style.display = 'none';
@@ -163,20 +181,64 @@ document.getElementById('bulkFiles').addEventListener('change', async function(e
 
   document.getElementById('bulkQueue').style.display = 'block';
   document.getElementById('bulkStart').disabled = false;
-  document.getElementById('bulkStatus').textContent = bulkFiles.length + ' file' + (bulkFiles.length>1?'s':'') + ' selected';
+  document.getElementById('bulkStatus').textContent = 'Checking for duplicates…';
 
+  // Fetch existing images for duplicate check
+  var existingImages = [];
+  try {
+    var res = await fetch('/admin/api/images');
+    existingImages = await res.json();
+  } catch(e) {}
+
+  var dupeCount = 0;
   for (var i = 0; i < bulkFiles.length; i++) {
     var f = bulkFiles[i];
     var dim = await readImageDimensions(f);
+    var dupe = checkDuplicate(f, dim, existingImages);
+    bulkDupes[i] = dupe;
+    if (dupe) dupeCount++;
+
     var row = document.createElement('div');
     row.id = 'bulk-row-' + i;
-    row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:4px;margin-bottom:4px;background:var(--bg);border:1px solid var(--border);font-size:12px;';
+
+    var borderColor = dupe ? 'rgba(230,180,0,.4)' : 'var(--border)';
+    var bg = dupe ? 'rgba(230,180,0,.05)' : 'var(--bg)';
+    row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:4px;margin-bottom:4px;background:'+bg+';border:1px solid '+borderColor+';font-size:12px;';
+
+    var dupeHint = '';
+    if (dupe) {
+      var matchLabel = dupe.match === 'filename' ? 'same filename' : 'same dimensions';
+      dupeHint = '<span title="Possible duplicate: matches existing photo #'+dupe.id+' ('+dupe.author+') by '+matchLabel+'" '+
+        'style="color:#e6b400;white-space:nowrap;cursor:default;">&#9888; Possible duplicate</span>';
+    }
+
+    var statusLabel = dupe ? '<span id="bulk-status-'+i+'" style="min-width:80px;text-align:right;font-weight:500;color:#e6b400;">Flagged</span>'
+                           : '<span id="bulk-status-'+i+'" style="min-width:80px;text-align:right;font-weight:500;">Pending</span>';
+
     row.innerHTML =
       '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);" title="'+f.name+'">'+f.name+'</span>' +
       '<span style="color:var(--muted);white-space:nowrap;">'+dim.w+'×'+dim.h+'</span>' +
       '<span style="color:var(--muted);white-space:nowrap;">'+(f.size/1024/1024).toFixed(1)+' MB</span>' +
-      '<span id="bulk-status-'+i+'" style="min-width:80px;text-align:right;font-weight:500;">Pending</span>';
+      dupeHint +
+      statusLabel;
     rows.appendChild(row);
+  }
+
+  var statusMsg = bulkFiles.length + ' file' + (bulkFiles.length>1?'s':'') + ' selected';
+  if (dupeCount > 0) {
+    statusMsg += ' — ' + dupeCount + ' possible duplicate' + (dupeCount>1?'s':'') + ' flagged';
+  }
+  document.getElementById('bulkStatus').textContent = statusMsg;
+
+  // If there are dupes, show a warning banner above the queue
+  var existing = document.getElementById('bulkDupeBanner');
+  if (existing) existing.remove();
+  if (dupeCount > 0) {
+    var banner = document.createElement('div');
+    banner.id = 'bulkDupeBanner';
+    banner.style.cssText = 'padding:10px 14px;border-radius:4px;margin-bottom:12px;font-size:12px;background:rgba(230,180,0,.08);border:1px solid rgba(230,180,0,.35);color:#e6b400;display:flex;gap:10px;align-items:center;';
+    banner.innerHTML = '<span>&#9888;</span><span>'+dupeCount+' file'+(dupeCount>1?'s have':' has')+' a possible match in your library (by filename or dimensions). They are highlighted below — you can still upload them if intended.</span>';
+    document.getElementById('bulkRows').before(banner);
   }
 });
 

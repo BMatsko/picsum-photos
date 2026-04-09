@@ -89,8 +89,9 @@ func (a *Admin) Router() http.Handler {
 	r.HandleFunc("/admin/seeds", a.auth(a.handleSeeds)).Methods("GET")
 	r.HandleFunc("/admin/seeds/clear", a.auth(a.handleClearSeed)).Methods("POST")
 	r.HandleFunc("/admin/docs", a.auth(a.handleDocs)).Methods("GET")
-	// JSON API for auto-fill
+	// JSON APIs
 	r.HandleFunc("/admin/api/next-id", a.auth(a.handleNextID)).Methods("GET")
+	r.HandleFunc("/admin/api/images", a.auth(a.handleImageList)).Methods("GET")
 	return r
 }
 
@@ -318,6 +319,28 @@ func (a *Admin) handleNextID(w http.ResponseWriter, r *http.Request) {
 	nextID, _ := a.DB.NextID(r.Context())
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"next_id": nextID})
+}
+
+// handleImageList returns a lightweight JSON list of all images for client-side duplicate detection.
+func (a *Admin) handleImageList(w http.ResponseWriter, r *http.Request) {
+	images, err := a.DB.ListAllWithTags(r.Context())
+	if err != nil {
+		http.Error(w, "db error", 500)
+		return
+	}
+	type entry struct {
+		ID     string `json:"id"`
+		Author string `json:"author"`
+		URL    string `json:"url"`
+		Width  int    `json:"width"`
+		Height int    `json:"height"`
+	}
+	out := make([]entry, len(images))
+	for i, img := range images {
+		out[i] = entry{ID: img.ID, Author: img.Author, URL: img.URL, Width: img.Width, Height: img.Height}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
