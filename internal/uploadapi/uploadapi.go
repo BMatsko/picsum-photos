@@ -4,24 +4,39 @@
 //
 //	POST /api/v1/upload
 //	  Authorization: Bearer pk_<key>
-//	  Content-Type: multipart/form-data
-//	  Fields: photo (file), author (string), tags (comma-separated, optional),
-//	          id (string, optional — auto-assigned if omitted),
-//	          width/height (int, optional — auto-detected from JPEG)
 //
-//	Returns 201 JSON: { "id": "...", "width": ..., "height": ..., "author": "...", "tags": [...] }
+//	  Mode 1 — file upload (multipart/form-data):
+//	    photo    file     JPEG or PNG file attachment
+//	    author   string   required
+//	    tags     string   comma-separated, optional
+//	    id       string   optional — auto-incremented if omitted
+//	    url      string   optional source label
+//	    width    int      optional — auto-detected from image
+//	    height   int      optional — auto-detected from image
+//
+//	  Mode 2 — URL fetch (application/json or multipart/form-data without photo):
+//	    photo_url  string   public URL to fetch and re-host
+//	    author     string   required
+//	    tags       string   comma-separated, optional
+//	    id         string   optional
+//	    url        string   optional override for source label (defaults to photo_url)
+//
+//	Returns 201 JSON: { "id": "...", "width": ..., "height": ..., "author": "...", "url": "...", "tags": [...] }
 package uploadapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/DMarby/picsum-photos/internal/database"
 	"github.com/DMarby/picsum-photos/internal/database/postgres"
@@ -61,20 +76,38 @@ func (a *API) apiKeyAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// handleUpload processes a multipart upload and saves the image.
+// handleUpload dispatches to file-upload or URL-fetch mode.
 func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
+	ct := r.Header.Get("Content-Type")
+
+	// JSON body → URL mode
+	if strings.HasPrefix(ct, "application/json") {
+		a.handleUploadFromJSON(w, r)
+		return
+	}
+
+	// Multipart — parse first, then decide based on whether photo_url is present
 	if err := r.ParseMultipartForm(100 << 20); err != nil {
 		jsonError(w, "form parse error", http.StatusBadRequest)
 		return
 	}
 
+	if r.FormValue("photo_url") != "" {
+		a.handleUploadFromURL(w, r)
+	} else {
+		a.handleUploadFromFile(w, r)
+	}
+}
+
+// ── Mode 1: file attachment ───────────────────────────────────────────────
+
+func (a *API) handleUploadFromFile(w http.ResponseWriter, r *http.Request) {
 	author := strings.TrimSpace(r.FormValue("author"))
 	if author == "" {
 		jsonError(w, "author is required", http.StatusBadRequest)
 		return
 	}
 
-	// ID: use provided or auto-assign
 	id := strings.TrimSpace(r.FormValue("id"))
 	if id == "" {
 		nextID, err := a.DB.NextID(r.Context())
@@ -85,53 +118,133 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 		id = fmt.Sprintf("%d", nextID)
 	}
 
-	// Read the uploaded file
 	file, header, err := r.FormFile("photo")
 	if err != nil {
-		jsonError(w, "photo file is required", http.StatusBadRequest)
+		jsonError(w, "photo file is required (or provide photo_url for URL mode)", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
 
-	// Read file bytes
-	data := make([]byte, header.Size)
-	if _, err := file.Read(data); err != nil {
+	data, err := io.ReadAll(file)
+	if err != nil {
 		jsonError(w, "failed to read file", http.StatusInternalServerError)
 		return
 	}
 
-	// Detect dimensions from JPEG if not provided
-	var width, height int
-	fmt.Sscan(r.FormValue("width"), &width)
-	fmt.Sscan(r.FormValue("height"), &height)
-	if width == 0 || height == 0 {
-		if cfg, _, err := image.DecodeConfig(strings.NewReader(string(data))); err == nil {
-			width, height = cfg.Width, cfg.Height
-		}
-	}
-
-	// Source URL
 	imgURL := strings.TrimSpace(r.FormValue("url"))
 	if imgURL == "" {
 		imgURL = header.Filename
 	}
 
-	// Tags
-	var tags []string
-	for _, t := range strings.Split(r.FormValue("tags"), ",") {
-		t = strings.TrimSpace(strings.ToLower(t))
-		if t != "" {
-			tags = append(tags, t)
-		}
-	}
-
-	// Determine extension from content type
 	fileExt := ".jpg"
 	if header.Header.Get("Content-Type") == "image/png" {
 		fileExt = ".png"
 	}
 
-	// Save file
+	a.finishUpload(w, r, id, author, imgURL, fileExt, parseTags(r.FormValue("tags")), data)
+}
+
+// ── Mode 2: URL fetch ─────────────────────────────────────────────────────
+
+type urlUploadRequest struct {
+	PhotoURL string `json:"photo_url"`
+	Author   string `json:"author"`
+	Tags     string `json:"tags"`
+	ID       string `json:"id"`
+	URL      string `json:"url"`
+}
+
+// handleUploadFromJSON reads a JSON body and fetches the remote image.
+func (a *API) handleUploadFromJSON(w http.ResponseWriter, r *http.Request) {
+	var req urlUploadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	a.fetchAndStore(w, r, req.PhotoURL, req.Author, req.URL, req.Tags, req.ID)
+}
+
+// handleUploadFromURL reads photo_url from a multipart form.
+func (a *API) handleUploadFromURL(w http.ResponseWriter, r *http.Request) {
+	a.fetchAndStore(w, r,
+		r.FormValue("photo_url"),
+		r.FormValue("author"),
+		r.FormValue("url"),
+		r.FormValue("tags"),
+		r.FormValue("id"),
+	)
+}
+
+func (a *API) fetchAndStore(w http.ResponseWriter, r *http.Request, photoURL, author, srcURL, tagsRaw, id string) {
+	author = strings.TrimSpace(author)
+	if author == "" {
+		jsonError(w, "author is required", http.StatusBadRequest)
+		return
+	}
+	photoURL = strings.TrimSpace(photoURL)
+	if photoURL == "" {
+		jsonError(w, "photo_url is required", http.StatusBadRequest)
+		return
+	}
+	if !strings.HasPrefix(photoURL, "http://") && !strings.HasPrefix(photoURL, "https://") {
+		jsonError(w, "photo_url must be an http/https URL", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch the remote image
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(photoURL)
+	if err != nil {
+		jsonError(w, "failed to fetch photo_url: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		jsonError(w, fmt.Sprintf("photo_url returned HTTP %d", resp.StatusCode), http.StatusBadGateway)
+		return
+	}
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 100<<20)) // 100 MB limit
+	if err != nil {
+		jsonError(w, "failed to read remote image", http.StatusBadGateway)
+		return
+	}
+
+	// Detect extension from Content-Type
+	fileExt := ".jpg"
+	remoteCT := resp.Header.Get("Content-Type")
+	if strings.Contains(remoteCT, "image/png") {
+		fileExt = ".png"
+	}
+
+	// Source URL label
+	if srcURL == "" {
+		srcURL = photoURL
+	}
+
+	// Auto-assign ID
+	if id == "" {
+		nextID, err := a.DB.NextID(r.Context())
+		if err != nil {
+			jsonError(w, "failed to assign ID", http.StatusInternalServerError)
+			return
+		}
+		id = fmt.Sprintf("%d", nextID)
+	}
+
+	a.finishUpload(w, r, id, author, srcURL, fileExt, parseTags(tagsRaw), data)
+}
+
+// ── Shared save + DB logic ────────────────────────────────────────────────
+
+func (a *API) finishUpload(w http.ResponseWriter, r *http.Request, id, author, imgURL, fileExt string, tags []string, data []byte) {
+	// Detect dimensions
+	var width, height int
+	if cfg, _, err := image.DecodeConfig(bytes.NewReader(data)); err == nil {
+		width, height = cfg.Width, cfg.Height
+	}
+
+	// Save to storage
 	if a.SFTP != nil {
 		if err := a.SFTP.PutWithExt(id, fileExt, data); err != nil {
 			jsonError(w, "failed to save file to storage", http.StatusInternalServerError)
@@ -152,7 +265,6 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 		id, author, imgURL, width, height, tags,
 	)
 	if dbErr != nil {
-		// Roll back file write
 		if a.SFTP != nil {
 			_ = a.SFTP.Delete(id)
 		} else {
@@ -174,7 +286,7 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleList returns all images as JSON (same as /v2/list but auth-gated).
+// handleList returns all images as JSON.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	images, err := a.DB.ListAllWithTags(r.Context())
 	if err != nil {
@@ -200,15 +312,23 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(out)
 }
 
+func parseTags(raw string) []string {
+	var tags []string
+	for _, t := range strings.Split(raw, ",") {
+		t = strings.TrimSpace(strings.ToLower(t))
+		if t != "" {
+			tags = append(tags, t)
+		}
+	}
+	return tags
+}
+
 func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
-// imageDecodeConfig helper — image.DecodeConfig needs an io.Reader not a string
-// so we use a bytes.Reader instead.
 func init() {
-	// Ensure jpeg decoder is registered (already done via _ "image/jpeg" import)
-	_ = database.ErrNotFound // silence unused import check
+	_ = database.ErrNotFound // ensure database import is used
 }
