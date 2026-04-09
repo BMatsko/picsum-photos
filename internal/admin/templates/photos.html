@@ -134,13 +134,21 @@
 <datalist id="authorList"></datalist>
 
 <div class="card">
-  <h2>Library ({{len .Images}} photos)</h2>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+    <h2 style="margin-bottom:0;">Library (<span id="photoCount">{{len .Images}}</span> photos)</h2>
+  </div>
   {{if .Images}}
-  <table>
+  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+    <input type="text" id="filterPhotoId" placeholder="Filter by ID…" oninput="filterPhotos()" style="width:90px;">
+    <input type="text" id="filterPhotoAuthor" placeholder="Filter by author…" oninput="filterPhotos()" style="flex:1;min-width:120px;">
+    <input type="text" id="filterPhotoTag" placeholder="Filter by tag…" oninput="filterPhotos()" style="flex:1;min-width:100px;">
+    <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="clearPhotoFilters()">Clear filters</button>
+  </div>
+  <table id="photoTable">
     <thead><tr><th>Preview</th><th>ID</th><th>Author</th><th>Dimensions</th><th>Tags</th><th></th></tr></thead>
     <tbody>
     {{range .Images}}
-    <tr>
+    <tr data-id="{{.ID}}" data-author="{{.Author}}" data-tags="{{join .Tags ","}}">
       <td><img class="thumb" src="{{$.RootURL}}/id/{{.ID}}/112/76" alt="" loading="lazy" onerror="this.style.opacity=0.2"></td>
       <td><code>{{.ID}}</code></td>
       <td>{{.Author}}</td>
@@ -163,12 +171,38 @@
     {{end}}
     </tbody>
   </table>
+  <p id="photoNoResults" style="display:none;color:var(--muted);font-size:13px;margin-top:12px;">No photos match your filter.</p>
   {{else}}
   <p style="color:var(--muted);font-size:13px;">No photos yet. Upload your first one above.</p>
   {{end}}
 </div>
 
 <script>
+// ── Photo library filter ──────────────────────────────────────────────
+function filterPhotos() {
+  var fId = (document.getElementById('filterPhotoId').value || '').toLowerCase();
+  var fAuthor = (document.getElementById('filterPhotoAuthor').value || '').toLowerCase();
+  var fTag = (document.getElementById('filterPhotoTag').value || '').toLowerCase();
+  var rows = document.querySelectorAll('#photoTable tbody tr[data-id]');
+  var visible = 0;
+  rows.forEach(function(row) {
+    var show = row.dataset.id.toLowerCase().includes(fId)
+      && row.dataset.author.toLowerCase().includes(fAuthor)
+      && row.dataset.tags.toLowerCase().includes(fTag);
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  document.getElementById('photoCount').textContent = visible;
+  var nr = document.getElementById('photoNoResults');
+  if (nr) nr.style.display = visible ? 'none' : 'block';
+}
+function clearPhotoFilters() {
+  ['filterPhotoId','filterPhotoAuthor','filterPhotoTag'].forEach(function(id){
+    var el = document.getElementById(id); if(el) el.value='';
+  });
+  filterPhotos();
+}
+
 // ── Meta: fetch existing tags + authors ───────────────────────────────────
 var allTags = [], allAuthors = [];
 

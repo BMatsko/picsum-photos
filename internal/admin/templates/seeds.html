@@ -6,6 +6,7 @@
 <p class="sub">Seeds are sticky — the first resolution is stored and returned for all future requests regardless of tag.</p>
 
 {{if .Success}}<div class="alert alert-ok">{{.Success}}</div>{{end}}
+{{if .Error}}<div class="alert alert-err">{{.Error}}</div>{{end}}
 
 <div class="card">
   <h2>How it works</h2>
@@ -45,21 +46,40 @@
 </div>
 
 <div class="card">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-    <h2 style="margin-bottom:0;">Stored resolutions ({{len .Seeds}})</h2>
-    {{if .Seeds}}
-    <form method="POST" action="/admin/seeds/clear" onsubmit="return confirm('Clear ALL seed resolutions?')">
-      <input type="hidden" name="seed" value="">
-      <button type="submit" class="btn btn-danger">Clear all</button>
-    </form>
-    {{end}}
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+    <h2 style="margin-bottom:0;">Stored resolutions (<span id="seedCount">{{len .Seeds}}</span>)</h2>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      {{if .Seeds}}
+      <!-- Clear by tag -->
+      <form method="POST" action="/admin/seeds/clear-by-tag" id="clearByTagForm" style="display:flex;gap:6px;align-items:center;">
+        <input type="text" name="tag" id="clearTagInput" placeholder="tag to clear" style="width:130px;padding:7px 10px;font-size:12px;" required>
+        <button type="submit" class="btn btn-danger" style="font-size:12px;padding:6px 12px;white-space:nowrap;"
+          onclick="return confirm('Clear all seeds with tag &quot;' + document.getElementById('clearTagInput').value + '&quot;?')">
+          Clear by tag
+        </button>
+      </form>
+      <!-- Clear all -->
+      <form method="POST" action="/admin/seeds/clear" onsubmit="return confirm('Clear ALL seed resolutions?')">
+        <input type="hidden" name="seed" value="">
+        <button type="submit" class="btn btn-danger" style="font-size:12px;padding:6px 12px;">Clear all</button>
+      </form>
+      {{end}}
+    </div>
   </div>
+
   {{if .Seeds}}
-  <table>
+  <!-- Filter bar -->
+  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+    <input type="text" id="filterSeed" placeholder="Filter by seed…" oninput="filterSeeds()" style="flex:2;min-width:140px;">
+    <input type="text" id="filterSeedTag" placeholder="Filter by tag…" oninput="filterSeeds()" style="flex:1;min-width:100px;">
+    <input type="text" id="filterSeedAuthor" placeholder="Filter by author…" oninput="filterSeeds()" style="flex:1;min-width:100px;">
+    <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="clearSeedFilters()">Clear filters</button>
+  </div>
+  <table id="seedTable">
     <thead><tr><th>Seed</th><th>Resolves to</th><th>Author</th><th>Tag filter</th><th>First seen</th><th></th></tr></thead>
     <tbody>
     {{range .Seeds}}
-    <tr>
+    <tr data-seed="{{.Seed}}" data-tag="{{.Tag}}" data-author="{{.Author}}">
       <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><code title="{{.Seed}}">{{.Seed}}</code></td>
       <td>
         {{if .ImageID}}
@@ -90,6 +110,7 @@
     {{end}}
     </tbody>
   </table>
+  <p id="seedNoResults" style="display:none;color:var(--muted);font-size:13px;margin-top:12px;">No seeds match your filter.</p>
   {{else}}
   <p style="color:var(--muted);font-size:13px;">No seeds resolved yet. Use the tester above or make a <code>/seed/*</code> API request.</p>
   {{end}}
@@ -112,6 +133,28 @@ function updatePreview() { document.getElementById('seedPreviewURL').textContent
 });
 updatePreview();
 document.getElementById('seedInput').addEventListener('keydown', function(e){ if(e.key==='Enter') openSeed(); });
+
+function filterSeeds() {
+  var fSeed = document.getElementById('filterSeed').value.toLowerCase();
+  var fTag = document.getElementById('filterSeedTag').value.toLowerCase();
+  var fAuthor = document.getElementById('filterSeedAuthor').value.toLowerCase();
+  var rows = document.querySelectorAll('#seedTable tbody tr');
+  var visible = 0;
+  rows.forEach(function(row) {
+    var seed = row.dataset.seed.toLowerCase();
+    var tag = row.dataset.tag.toLowerCase();
+    var author = row.dataset.author.toLowerCase();
+    var show = seed.includes(fSeed) && tag.includes(fTag) && author.includes(fAuthor);
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  document.getElementById('seedCount').textContent = visible;
+  document.getElementById('seedNoResults').style.display = visible ? 'none' : 'block';
+}
+function clearSeedFilters() {
+  ['filterSeed','filterSeedTag','filterSeedAuthor'].forEach(function(id){ document.getElementById(id).value=''; });
+  filterSeeds();
+}
 </script>
 </main></body></html>
 {{end}}

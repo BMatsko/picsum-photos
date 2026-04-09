@@ -313,6 +313,22 @@ func (a *Admin) handleSeeds(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *Admin) handleClearSeedsByTag(w http.ResponseWriter, r *http.Request) {
+	tag := strings.TrimSpace(strings.ToLower(r.FormValue("tag")))
+	if tag == "" {
+		http.Redirect(w, r, "/admin/seeds?error=Tag+is+required", http.StatusFound)
+		return
+	}
+	result, err := a.DB.Pool().Exec(r.Context(),
+		`DELETE FROM seed_resolutions WHERE tag = $1`, tag)
+	if err != nil {
+		http.Redirect(w, r, "/admin/seeds?error=Failed+to+clear+seeds", http.StatusFound)
+		return
+	}
+	n := result.RowsAffected()
+	http.Redirect(w, r, fmt.Sprintf("/admin/seeds?success=Cleared+%d+seed%%28s%%29+with+tag+%%22%s%%22", n, tag), http.StatusFound)
+}
+
 func (a *Admin) handleClearSeed(w http.ResponseWriter, r *http.Request) {
 	seed := r.FormValue("seed")
 	if seed == "" {

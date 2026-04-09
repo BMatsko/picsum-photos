@@ -27,13 +27,17 @@
 </div>
 
 <div class="card">
-  <h2>Active keys ({{len .Keys}})</h2>
+  <h2>Active keys (<span id="keyCount">{{len .Keys}}</span>)</h2>
   {{if .Keys}}
-  <table>
+  <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <input type="text" id="filterKeyName" placeholder="Filter by name…" oninput="filterKeys()" style="flex:1;">
+    <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="document.getElementById('filterKeyName').value='';filterKeys()">Clear</button>
+  </div>
+  <table id="keyTable">
     <thead><tr><th>Name</th><th>ID</th><th>Created</th><th></th></tr></thead>
     <tbody>
     {{range .Keys}}
-    <tr>
+    <tr data-name="{{.Name}}">
       <td style="font-weight:500;">{{.Name}}</td>
       <td><code>{{.ID}}</code></td>
       <td style="color:var(--muted);font-size:12px;">{{.CreatedAt}}</td>
@@ -62,5 +66,19 @@
   <p style="color:var(--muted);font-size:12px;margin-top:12px;">Returns <code>201 JSON</code> with the assigned <code>id</code>, dimensions, and tags. See <a href="/admin/docs" class="link">Docs</a> for the full reference.</p>
 </div>
 
+<script>
+function filterKeys() {
+  var f = (document.getElementById('filterKeyName').value || '').toLowerCase();
+  var rows = document.querySelectorAll('#keyTable tbody tr[data-name]');
+  var visible = 0;
+  rows.forEach(function(row) {
+    var show = row.dataset.name.toLowerCase().includes(f);
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  document.getElementById('keyCount').textContent = visible;
+  document.getElementById('keyNoResults').style.display = visible ? 'none' : 'block';
+}
+</script>
 </main></body></html>
 {{end}}
