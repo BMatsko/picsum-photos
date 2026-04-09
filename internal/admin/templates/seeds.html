@@ -3,7 +3,7 @@
 <body>{{template "nav" .}}
 <main>
 <h1>Seeds</h1>
-<p class="sub">Seeds are sticky — the first resolution is stored and returned for all future requests regardless of tag.</p>
+<p class="sub">Each (seed, tag) combination resolves to its own image independently. Revisiting the same combination always returns the same image.</p>
 
 {{if .Success}}<div class="alert alert-ok">{{.Success}}</div>{{end}}
 {{if .Error}}<div class="alert alert-err">{{.Error}}</div>{{end}}
@@ -13,16 +13,20 @@
   <table style="margin-bottom:0;">
     <tbody>
       <tr>
-        <td style="width:200px;"><code>/seed/abc/400/300</code></td>
-        <td style="color:var(--muted);font-size:13px;">No prior resolution → picks from full pool deterministically → stores result</td>
+        <td style="width:240px;"><code>/seed/abc/400/300</code></td>
+        <td style="color:var(--muted);font-size:13px;">Resolves <strong style="color:var(--text);">(abc, —)</strong> → same image every time</td>
       </tr>
       <tr>
         <td><code>/seed/abc/400/300?tag=nature</code></td>
-        <td style="color:var(--muted);font-size:13px;">No prior resolution → picks from <strong style="color:var(--text);">nature-tagged photos only</strong> → stores result</td>
+        <td style="color:var(--muted);font-size:13px;">Resolves <strong style="color:var(--text);">(abc, nature)</strong> → nature-filtered image, stored independently</td>
       </tr>
       <tr>
-        <td><code>/seed/abc/400/300</code> <em style="color:var(--muted);">later</em></td>
-        <td style="color:var(--muted);font-size:13px;">Resolution already stored → returns same photo regardless of tag</td>
+        <td><code>/seed/abc/400/300?tag=urban</code></td>
+        <td style="color:var(--muted);font-size:13px;">Resolves <strong style="color:var(--text);">(abc, urban)</strong> → different image, its own slot</td>
+      </tr>
+      <tr>
+        <td><code>/seed/abc/400/300?tag=nature</code> <em style="color:var(--muted);">again</em></td>
+        <td style="color:var(--muted);font-size:13px;">Returns the original nature image — slot memory is permanent</td>
       </tr>
     </tbody>
   </table>
@@ -33,11 +37,11 @@
   <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
     <input type="text" id="seedInput" placeholder="my-seed" style="max-width:220px;">
     <input type="text" id="tagInput" placeholder="tag (optional)" style="max-width:150px;">
-    <select id="seedW" style="padding:9px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);">
+    <select id="seedW">
       <option>400</option><option>800</option><option>1200</option><option>200</option>
     </select>
     <span style="color:var(--muted);">×</span>
-    <select id="seedH" style="padding:9px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);">
+    <select id="seedH">
       <option>300</option><option>600</option><option>400</option><option>200</option>
     </select>
     <button class="btn btn-primary" onclick="openSeed()">Open →</button>
@@ -47,10 +51,9 @@
 
 <div class="card">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
-    <h2 style="margin-bottom:0;">Stored resolutions (<span id="seedCount">{{len .Seeds}}</span>)</h2>
+    <h2 style="margin-bottom:0;">Stored resolutions (<span id="seedGroupCount">{{len .Groups}}</span> seeds)</h2>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-      {{if .Seeds}}
-      <!-- Clear by tag -->
+      {{if .Groups}}
       <form method="POST" action="/admin/seeds/clear-by-tag" id="clearByTagForm" style="display:flex;gap:6px;align-items:center;">
         <input type="text" name="tag" id="clearTagInput" placeholder="tag to clear" style="width:130px;padding:7px 10px;font-size:12px;" required>
         <button type="submit" class="btn btn-danger" style="font-size:12px;padding:6px 12px;white-space:nowrap;"
@@ -58,11 +61,9 @@
           Clear by tag
         </button>
       </form>
-      <!-- Clear untagged -->
       <form method="POST" action="/admin/seeds/clear-untagged" onsubmit="return confirm('Clear all seeds with no tag?')">
         <button type="submit" class="btn btn-danger" style="font-size:12px;padding:6px 12px;">Clear untagged</button>
       </form>
-      <!-- Clear all -->
       <form method="POST" action="/admin/seeds/clear" onsubmit="return confirm('Clear ALL seed resolutions?')">
         <input type="hidden" name="seed" value="">
         <button type="submit" class="btn btn-danger" style="font-size:12px;padding:6px 12px;">Clear all</button>
@@ -71,7 +72,7 @@
     </div>
   </div>
 
-  {{if .Seeds}}
+  {{if .Groups}}
   <!-- Filter bar -->
   <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
     <input type="text" id="filterSeed" placeholder="Filter by seed…" oninput="filterSeeds()" style="flex:2;min-width:140px;">
@@ -79,38 +80,63 @@
     <input type="text" id="filterSeedAuthor" placeholder="Filter by author…" oninput="filterSeeds()" style="flex:1;min-width:100px;">
     <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="clearSeedFilters()">Clear filters</button>
   </div>
+
   <table id="seedTable">
-    <thead><tr><th>Seed</th><th>Resolves to</th><th>Author</th><th>Tag filter</th><th>First seen</th><th></th></tr></thead>
+    <thead>
+      <tr>
+        <th>Seed</th>
+        <th>Tag</th>
+        <th>Image</th>
+        <th>Author</th>
+        <th>First seen</th>
+        <th></th>
+      </tr>
+    </thead>
     <tbody>
-    {{range .Seeds}}
-    <tr data-seed="{{.Seed}}" data-tag="{{.Tag}}" data-author="{{.Author}}">
-      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><code title="{{.Seed}}">{{.Seed}}</code></td>
-      <td>
-        {{if .ImageID}}
-        <a class="link" href="{{$.RootURL}}/id/{{.ImageID}}/200/150" target="_blank">
-          <img style="width:60px;height:40px;object-fit:cover;border-radius:3px;vertical-align:middle;" src="{{$.RootURL}}/id/{{.ImageID}}/120/80">
-          <code>{{.ImageID}}</code>
-        </a>
-        {{else}}
-        <span style="color:var(--muted);font-size:12px;">⚠ image deleted — will re-resolve</span>
-        {{end}}
-      </td>
-      <td style="color:var(--muted);font-size:12px;">{{.Author}}</td>
-      <td>
-        {{if .Tag}}
-        <span style="display:inline-block;background:rgba(89,84,249,.1);color:#5954F9;border:1px solid rgba(89,84,249,.25);border-radius:3px;padding:2px 8px;font-size:11px;font-weight:600;">{{.Tag}}</span>
-        {{else}}
-        <span style="color:var(--muted);font-size:12px;">any</span>
-        {{end}}
-      </td>
-      <td style="color:var(--muted);font-size:12px;">{{.CreatedAt}}</td>
-      <td>
-        <form method="POST" action="/admin/seeds/clear">
-          <input type="hidden" name="seed" value="{{.Seed}}">
-          <button type="submit" class="btn btn-danger" style="font-size:11px;padding:4px 10px;">Clear</button>
-        </form>
-      </td>
-    </tr>
+    {{range .Groups}}
+      {{$seed := .Seed}}
+      {{range $i, $v := .Variants}}
+      <tr data-seed="{{$seed}}" data-tag="{{$v.Tag}}" data-author="{{$v.Author}}"
+          {{if gt $i 0}}style="background:#f9faff;"{{end}}>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          {{if eq $i 0}}
+          <code title="{{$seed}}">{{$seed}}</code>
+          {{else}}
+          <span style="color:var(--muted);font-size:12px;padding-left:8px;">↳</span>
+          {{end}}
+        </td>
+        <td>
+          {{if $v.Tag}}
+          <span style="display:inline-block;background:rgba(89,84,249,.1);color:#5954F9;border:1px solid rgba(89,84,249,.25);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;">{{$v.Tag}}</span>
+          {{else}}
+          <span style="color:var(--muted);font-size:12px;font-style:italic;">none</span>
+          {{end}}
+        </td>
+        <td>
+          {{if and $v.ImageID (eq $v.Deleted false)}}
+          <a class="link" href="{{$.RootURL}}/id/{{$v.ImageID}}/200/150" target="_blank" style="display:inline-flex;align-items:center;gap:6px;">
+            <img style="width:48px;height:32px;object-fit:cover;border-radius:6px;vertical-align:middle;" src="{{$.RootURL}}/id/{{$v.ImageID}}/96/64">
+            <code>{{$v.ImageID}}</code>
+          </a>
+          {{else if $v.Deleted}}
+          <span style="color:var(--muted);font-size:12px;">⚠ deleted — will re-resolve</span>
+          {{else}}
+          <span style="color:var(--muted);font-size:12px;">—</span>
+          {{end}}
+        </td>
+        <td style="color:var(--muted);font-size:12px;">{{$v.Author}}</td>
+        <td style="color:var(--muted);font-size:12px;white-space:nowrap;">{{$v.CreatedAt}}</td>
+        <td>
+          <form method="POST" action="/admin/seeds/clear">
+            <input type="hidden" name="seed" value="{{$seed}}">
+            <button type="submit" class="btn btn-danger" style="font-size:11px;padding:4px 10px;"
+              onclick="return confirm('Clear all resolutions for seed &quot;{{$seed}}&quot;?')">
+              Clear seed
+            </button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
     {{end}}
     </tbody>
   </table>
@@ -142,18 +168,18 @@ function filterSeeds() {
   var fSeed = document.getElementById('filterSeed').value.toLowerCase();
   var fTag = document.getElementById('filterSeedTag').value.toLowerCase();
   var fAuthor = document.getElementById('filterSeedAuthor').value.toLowerCase();
-  var rows = document.querySelectorAll('#seedTable tbody tr');
-  var visible = 0;
+  var rows = document.querySelectorAll('#seedTable tbody tr[data-seed]');
+  var visibleSeeds = new Set();
   rows.forEach(function(row) {
     var seed = row.dataset.seed.toLowerCase();
     var tag = row.dataset.tag.toLowerCase();
     var author = row.dataset.author.toLowerCase();
     var show = seed.includes(fSeed) && tag.includes(fTag) && author.includes(fAuthor);
     row.style.display = show ? '' : 'none';
-    if (show) visible++;
+    if (show) visibleSeeds.add(row.dataset.seed);
   });
-  document.getElementById('seedCount').textContent = visible;
-  document.getElementById('seedNoResults').style.display = visible ? 'none' : 'block';
+  document.getElementById('seedGroupCount').textContent = visibleSeeds.size;
+  document.getElementById('seedNoResults').style.display = visibleSeeds.size ? 'none' : 'block';
 }
 function clearSeedFilters() {
   ['filterSeed','filterSeedTag','filterSeedAuthor'].forEach(function(id){ document.getElementById(id).value=''; });

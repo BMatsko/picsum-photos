@@ -286,32 +286,56 @@ func (a *Admin) handleUpdateTags(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Admin) handleSeeds(w http.ResponseWriter, r *http.Request) {
-	type SeedRow struct {
-		Seed      string
-		ImageID   string // may be empty if image was deleted
-		Author    string
+	type TagVariant struct {
 		Tag       string
+		ImageID   string
+		Author    string
 		CreatedAt string
+		Deleted   bool
 	}
+	type SeedGroup struct {
+		Seed     string
+		Variants []TagVariant
+	}
+
 	rows, err := a.DB.Pool().Query(r.Context(),
-		`SELECT sr.seed, COALESCE(sr.image_id,''), COALESCE(i.author,'(deleted)'), COALESCE(sr.tag,''), sr.created_at
+		`SELECT sr.seed, COALESCE(sr.tag,''), COALESCE(sr.image_id,''), COALESCE(i.author,''), sr.image_id IS NULL AND EXISTS(SELECT 1 FROM seed_resolutions sr2 WHERE sr2.seed=sr.seed AND sr2.tag=sr.tag) as deleted, sr.created_at
 		 FROM seed_resolutions sr LEFT JOIN images i ON i.id = sr.image_id
-		 ORDER BY sr.created_at DESC LIMIT 200`)
-	var seeds []SeedRow
+		 ORDER BY sr.seed, sr.tag`)
+
+	seedMap := map[string]*SeedGroup{}
+	var seedOrder []string
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
-			var s SeedRow
+			var seed, tag, imageID, author string
+			var deleted bool
 			var ts time.Time
-			rows.Scan(&s.Seed, &s.ImageID, &s.Author, &s.Tag, &ts)
-			s.CreatedAt = ts.Format("Jan 2, 2006 15:04")
-			seeds = append(seeds, s)
+			rows.Scan(&seed, &tag, &imageID, &author, &deleted, &ts)
+			if author == "" && imageID != "" {
+				author = "(deleted)"
+			}
+			if _, exists := seedMap[seed]; !exists {
+				seedMap[seed] = &SeedGroup{Seed: seed}
+				seedOrder = append(seedOrder, seed)
+			}
+			seedMap[seed].Variants = append(seedMap[seed].Variants, TagVariant{
+				Tag: tag, ImageID: imageID, Author: author,
+				Deleted: deleted || imageID == "",
+				CreatedAt: ts.Format("Jan 2, 2006 15:04"),
+			})
 		}
 	}
 
-	images, _ := a.DB.ListAllWithTags(r.Context())
+	var groups []SeedGroup
+	for _, s := range seedOrder {
+		groups = append(groups, *seedMap[s])
+	}
+
 	a.render(w, "seeds.html", map[string]any{
-		"Page": "seeds", "Seeds": seeds, "Images": images, "RootURL": a.RootURL,
+		"Page": "seeds", "Groups": groups, "RootURL": a.RootURL,
+		"Success": r.URL.Query().Get("success"),
+		"Error":   r.URL.Query().Get("error"),
 	})
 }
 

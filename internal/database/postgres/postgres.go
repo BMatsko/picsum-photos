@@ -31,16 +31,32 @@ CREATE TABLE IF NOT EXISTS images (
 ALTER TABLE images ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
 
 CREATE TABLE IF NOT EXISTS seed_resolutions (
-	seed       TEXT PRIMARY KEY,
-	image_id   TEXT REFERENCES images(id) ON DELETE SET NULL,
+	seed       TEXT NOT NULL,
 	tag        TEXT NOT NULL DEFAULT '',
-	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	image_id   TEXT REFERENCES images(id) ON DELETE SET NULL,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	PRIMARY KEY (seed, tag)
 );
 
--- Migrate existing tables: add tag column, change cascade to SET NULL so tag survives deletes
+-- Migrate: ensure tag column exists and image_id is nullable
 ALTER TABLE seed_resolutions ADD COLUMN IF NOT EXISTS tag TEXT NOT NULL DEFAULT '';
 ALTER TABLE seed_resolutions ALTER COLUMN image_id DROP NOT NULL;
+
+-- Migrate: upgrade from (seed) PK to (seed, tag) composite PK
+-- Drop old single-column PK if it exists, then add composite PK
 DO $$ BEGIN
+  -- Drop old primary key on seed alone
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'seed_resolutions_pkey'
+    AND contype = 'p'
+    AND conrelid = 'seed_resolutions'::regclass
+    AND array_length(conkey, 1) = 1
+  ) THEN
+    ALTER TABLE seed_resolutions DROP CONSTRAINT seed_resolutions_pkey;
+    ALTER TABLE seed_resolutions ADD PRIMARY KEY (seed, tag);
+  END IF;
+  -- Fix FK to SET NULL if still CASCADE
   IF EXISTS (
     SELECT 1 FROM information_schema.table_constraints
     WHERE constraint_name = 'seed_resolutions_image_id_fkey'
@@ -129,50 +145,54 @@ func (p *Provider) GetRandomWithSeed(ctx context.Context, seed int64) (*database
 	return p.getRandomWithSeedAndTag(ctx, seed, "")
 }
 
-// GetRandomWithSeedAndTag resolves a seed, optionally filtering by tag.
+// GetRandomWithSeedAndTag resolves a (seed, tag) pair to a specific image.
+//
+// Each unique (seed, tag) combination is stored and resolved independently.
+// A bare request with no tag uses tag="" as its own slot.
 //
 // Resolution order:
-//  1. If a stored resolution exists for this seed AND the image still exists, return it.
-//  2. If a stored resolution row exists but the image was deleted (cascade removed the row),
-//     OR no row exists: look up any stored tag for this seed (from a tag-only row),
-//     then re-resolve using that stored tag (falling back to the request tag, then any).
-//  3. Store the new resolution and tag.
+//  1. If a stored (seed, tag) resolution exists and the image is still alive, return it.
+//  2. If image was deleted (image_id is NULL), re-resolve using the same tag filter and update.
+//  3. If no row exists yet, resolve fresh using the tag filter and store it.
+//  4. If the tag has no matching images, fall back to the full pool (store with effective tag "").
 func (p *Provider) GetRandomWithSeedAndTag(ctx context.Context, seed int64, seedStr string, tag string) (*database.Image, error) {
-	// 1. Look up any existing row for this seed (image_id may be NULL if its image was deleted)
+	// 1. Look up existing resolution for this exact (seed, tag) pair
 	var storedImageID *string
-	var storedTag string
 	p.pool.QueryRow(ctx,
-		`SELECT image_id, tag FROM seed_resolutions WHERE seed = $1`, seedStr,
-	).Scan(&storedImageID, &storedTag)
+		`SELECT image_id FROM seed_resolutions WHERE seed = $1 AND tag = $2`,
+		seedStr, tag,
+	).Scan(&storedImageID)
 
-	// If image_id is non-null, the image still exists — return it directly
 	if storedImageID != nil {
+		// Image still exists — return it
 		row := p.pool.QueryRow(ctx,
 			`SELECT id, author, url, width, height FROM images WHERE id = $1`, *storedImageID)
 		img := &database.Image{}
 		if err := row.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height); err == nil {
 			return img, nil
 		}
+		// Image was deleted — fall through to re-resolve below
 	}
 
-	// 2. No valid resolution (never set, or image was deleted and image_id is now NULL).
-	//    Stored tag takes precedence over the incoming request tag; blank = no filter.
-	resolveTag := storedTag
-	if resolveTag == "" {
-		resolveTag = tag
-	}
-
-	// 3. Pick from pool using resolveTag; get back the tag actually used (may differ if tag had no matches)
-	resolved, effectiveTag, err := p.pickWithTag(ctx, seed, resolveTag)
+	// 2. No valid resolution — pick a new image filtered by this tag
+	resolved, effectiveTag, err := p.pickWithTag(ctx, seed, tag)
 	if err != nil {
 		return nil, err
 	}
 
-	// 4. Store the resolution AND the effective tag (upsert)
+	// 3. Store/update the resolution for this (seed, tag) pair
 	_, _ = p.pool.Exec(ctx,
-		`INSERT INTO seed_resolutions (seed, image_id, tag) VALUES ($1, $2, $3)
-		 ON CONFLICT (seed) DO UPDATE SET image_id = EXCLUDED.image_id, tag = EXCLUDED.tag`,
-		seedStr, resolved.ID, effectiveTag)
+		`INSERT INTO seed_resolutions (seed, tag, image_id) VALUES ($1, $2, $3)
+		 ON CONFLICT (seed, tag) DO UPDATE SET image_id = EXCLUDED.image_id`,
+		seedStr, effectiveTag, resolved.ID)
+
+	// If the tag had no matches and we fell back to empty, also store for the original tag key
+	if effectiveTag != tag {
+		_, _ = p.pool.Exec(ctx,
+			`INSERT INTO seed_resolutions (seed, tag, image_id) VALUES ($1, $2, $3)
+			 ON CONFLICT (seed, tag) DO UPDATE SET image_id = EXCLUDED.image_id`,
+			seedStr, tag, resolved.ID)
+	}
 
 	return resolved, nil
 }
