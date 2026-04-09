@@ -47,6 +47,35 @@
   </form>
 </div>
 
+<div class="card" id="bulkCard">
+  <h2>Bulk import</h2>
+  <div class="g2" style="margin-bottom:14px;">
+    <div class="frow">
+      <label>Author <span style="color:#c0392b">*</span></label>
+      <input type="text" id="bulkAuthor" placeholder="e.g. Jane Doe">
+    </div>
+    <div class="frow">
+      <label>Tags <span style="color:var(--muted);font-weight:400;text-transform:none;font-size:11px;">(comma-separated, applied to all)</span></label>
+      <input type="text" id="bulkTags" placeholder="e.g. nature, portrait">
+    </div>
+  </div>
+  <div class="frow" style="margin-bottom:16px;">
+    <label>JPEG Files <span style="color:#c0392b">*</span></label>
+    <input type="file" id="bulkFiles" accept="image/jpeg" multiple>
+  </div>
+
+  <div id="bulkQueue" style="display:none;margin-bottom:16px;">
+    <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">Queue</div>
+    <div id="bulkRows"></div>
+    <div id="bulkSummary" style="display:none;margin-top:12px;font-size:13px;"></div>
+  </div>
+
+  <div style="display:flex;gap:10px;align-items:center;">
+    <button class="btn btn-primary" id="bulkStart" disabled>Upload all</button>
+    <span id="bulkStatus" style="font-size:12px;color:var(--muted);"></span>
+  </div>
+</div>
+
 <div class="card">
   <h2>Library ({{len .Images}} photos)</h2>
   {{if .Images}}
@@ -80,35 +109,165 @@
 </div>
 
 <script>
-// Auto-fill ID on page load
-fetch('/admin/api/next-id').then(r=>r.json()).then(d=>{
-  var el = document.getElementById('photoId');
-  el.value = d.next_id;
-  document.getElementById('idStatus').textContent = '(auto-filled)';
-});
+// ── Single upload: auto-fill ID + dimensions ──────────────────────────────
+function refreshNextId() {
+  fetch('/admin/api/next-id').then(r=>r.json()).then(d=>{
+    var el = document.getElementById('photoId');
+    el.value = d.next_id;
+    document.getElementById('idStatus').textContent = '(auto-filled)';
+  });
+}
+refreshNextId();
 
-// Auto-detect width/height from file, and pre-fill URL from filename
-document.getElementById('photoFile').addEventListener('change', function(e) {
+function readImageDimensions(file) {
+  return new Promise(resolve => {
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      var img = new Image();
+      img.onload = function() { resolve({w: img.naturalWidth, h: img.naturalHeight}); };
+      img.onerror = function() { resolve({w:0, h:0}); };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+document.getElementById('photoFile').addEventListener('change', async function(e) {
   var file = e.target.files[0];
   if (!file) return;
-
-  // Source URL from filename
   var urlEl = document.getElementById('photoUrl');
   if (!urlEl.value) urlEl.value = file.name;
+  var dim = await readImageDimensions(file);
+  if (dim.w) {
+    document.getElementById('photoW').value = dim.w;
+    document.getElementById('photoH').value = dim.h;
+    document.getElementById('wStatus').textContent = '(detected)';
+    document.getElementById('hStatus').textContent = '(detected)';
+  }
+});
 
-  // Dimensions from image
-  var reader = new FileReader();
-  reader.onload = function(ev) {
-    var img = new Image();
-    img.onload = function() {
-      document.getElementById('photoW').value = img.naturalWidth;
-      document.getElementById('photoH').value = img.naturalHeight;
-      document.getElementById('wStatus').textContent = '(detected)';
-      document.getElementById('hStatus').textContent = '(detected)';
-    };
-    img.src = ev.target.result;
-  };
-  reader.readAsDataURL(file);
+// ── Bulk import ────────────────────────────────────────────────────────────
+var bulkFiles = [];
+
+document.getElementById('bulkFiles').addEventListener('change', async function(e) {
+  bulkFiles = Array.from(e.target.files);
+  var rows = document.getElementById('bulkRows');
+  rows.innerHTML = '';
+  document.getElementById('bulkSummary').style.display = 'none';
+
+  if (!bulkFiles.length) {
+    document.getElementById('bulkQueue').style.display = 'none';
+    document.getElementById('bulkStart').disabled = true;
+    return;
+  }
+
+  document.getElementById('bulkQueue').style.display = 'block';
+  document.getElementById('bulkStart').disabled = false;
+  document.getElementById('bulkStatus').textContent = bulkFiles.length + ' file' + (bulkFiles.length>1?'s':'') + ' selected';
+
+  for (var i = 0; i < bulkFiles.length; i++) {
+    var f = bulkFiles[i];
+    var dim = await readImageDimensions(f);
+    var row = document.createElement('div');
+    row.id = 'bulk-row-' + i;
+    row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:4px;margin-bottom:4px;background:var(--bg);border:1px solid var(--border);font-size:12px;';
+    row.innerHTML =
+      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);" title="'+f.name+'">'+f.name+'</span>' +
+      '<span style="color:var(--muted);white-space:nowrap;">'+dim.w+'×'+dim.h+'</span>' +
+      '<span style="color:var(--muted);white-space:nowrap;">'+(f.size/1024/1024).toFixed(1)+' MB</span>' +
+      '<span id="bulk-status-'+i+'" style="min-width:80px;text-align:right;font-weight:500;">Pending</span>';
+    rows.appendChild(row);
+  }
+});
+
+function setRowStatus(i, text, color) {
+  var el = document.getElementById('bulk-status-' + i);
+  if (el) { el.textContent = text; el.style.color = color; }
+  var row = document.getElementById('bulk-row-' + i);
+  if (row) row.style.borderColor = color === 'var(--success-color)' ? 'rgba(39,174,96,.35)' : color === '#e74c3c' ? 'rgba(192,57,43,.35)' : 'var(--border)';
+}
+
+document.getElementById('bulkStart').addEventListener('click', async function() {
+  var author = document.getElementById('bulkAuthor').value.trim();
+  if (!author) { alert('Author is required for bulk import.'); return; }
+  if (!bulkFiles.length) return;
+
+  var btn = document.getElementById('bulkStart');
+  btn.disabled = true;
+  btn.textContent = 'Uploading…';
+  document.getElementById('bulkFiles').disabled = true;
+  document.getElementById('bulkAuthor').disabled = true;
+  document.getElementById('bulkTags').disabled = true;
+
+  var tags = document.getElementById('bulkTags').value.trim();
+  var ok = 0, fail = 0;
+
+  for (var i = 0; i < bulkFiles.length; i++) {
+    var f = bulkFiles[i];
+    document.getElementById('bulkStatus').textContent = 'Uploading ' + (i+1) + ' of ' + bulkFiles.length + '…';
+    setRowStatus(i, 'Uploading…', 'var(--muted)');
+
+    // Fetch a fresh next-id for each file
+    var nextId;
+    try {
+      var idRes = await fetch('/admin/api/next-id');
+      var idData = await idRes.json();
+      nextId = String(idData.next_id);
+    } catch(e) {
+      setRowStatus(i, 'ID error', '#e74c3c');
+      fail++;
+      continue;
+    }
+
+    // Read dimensions
+    var dim = await readImageDimensions(f);
+
+    var fd = new FormData();
+    fd.append('id', nextId);
+    fd.append('author', author);
+    fd.append('url', f.name);
+    fd.append('tags', tags);
+    fd.append('width', dim.w || 0);
+    fd.append('height', dim.h || 0);
+    fd.append('photo', f);
+
+    try {
+      var res = await fetch('/admin/photos/upload', {method:'POST', body:fd, redirect:'manual'});
+      // Upload handler redirects on success (opaqueredirect = success)
+      if (res.type === 'opaqueredirect' || res.ok || res.status === 0) {
+        // Verify by checking the redirect URL contains "success"
+        // Since we use redirect:manual we get status 0 for the redirect
+        setRowStatus(i, 'Done', 'var(--success-color)');
+        ok++;
+      } else {
+        var txt = await res.text().catch(()=>'');
+        setRowStatus(i, 'Failed', '#e74c3c');
+        fail++;
+      }
+    } catch(e) {
+      setRowStatus(i, 'Error', '#e74c3c');
+      fail++;
+    }
+  }
+
+  // Show summary
+  var summary = document.getElementById('bulkSummary');
+  summary.style.display = 'block';
+  summary.style.color = fail ? '#e74c3c' : 'var(--success-color)';
+  summary.textContent = ok + ' uploaded successfully' + (fail ? ', ' + fail + ' failed' : '') + '.';
+
+  document.getElementById('bulkStatus').textContent = 'Done';
+  btn.textContent = 'Upload all';
+
+  // Reload the library section
+  if (ok > 0) {
+    setTimeout(function(){ window.location.href = '/admin/photos?success=Bulk+import+complete'; }, 800);
+  } else {
+    btn.disabled = false;
+    document.getElementById('bulkFiles').disabled = false;
+    document.getElementById('bulkAuthor').disabled = false;
+    document.getElementById('bulkTags').disabled = false;
+  }
 });
 </script>
 </main></body></html>
