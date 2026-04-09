@@ -24,16 +24,6 @@ var (
 )
 
 func (a *API) imageHandler(w http.ResponseWriter, r *http.Request) *handler.Error {
-	// Validate the path and query parameters
-	valid, err := params.ValidateHMAC(a.HMAC, r)
-	if err != nil {
-		return handler.InternalServerError()
-	}
-
-	if !valid {
-		return handler.BadRequest("Invalid parameters")
-	}
-
 	// Get the path and query parameters
 	p, err := params.GetParams(r)
 	if err != nil {

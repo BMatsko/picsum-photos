@@ -181,6 +181,7 @@ func main() {
 
 	// ── Routers ───────────────────────────────────────────────────────────────
 	imgAPI := imageapi.NewAPI(imageProcessor, log, tracer, cmd.HandlerTimeout, h)
+	imgAPIRouter := imgAPI.Router()
 
 	mainAPI := &api.API{
 		Database:        db,
@@ -201,7 +202,15 @@ func main() {
 	mux.Handle("/health", handler.Health(checker))
 	mux.Handle("/admin", adminUI.Router())
 	mux.Handle("/admin/", adminUI.Router())
-	mux.Handle("/id/", imgAPI.Router())
+	// Route image processing — but let /id/{id}/info fall through to the main router
+	mux.HandleFunc("/id/", func(w http.ResponseWriter, r *http.Request) {
+		// /id/{id}/info must be handled by the main API router
+		if strings.HasSuffix(r.URL.Path, "/info") {
+			mainRouter.ServeHTTP(w, r)
+			return
+		}
+		imgAPIRouter.ServeHTTP(w, r)
+	})
 	// Redirect root to admin
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
