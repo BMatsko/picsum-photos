@@ -3,7 +3,6 @@ package file
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -26,16 +25,16 @@ func New(path string) (*Provider, error) {
 	}, nil
 }
 
-// Get returns the image data for an image id
+// Get returns the image data for an image id, trying .jpg then .png.
 func (p *Provider) Get(ctx context.Context, id string) ([]byte, error) {
-	imageData, err := os.ReadFile(filepath.Join(p.path, fmt.Sprintf("%s.jpg", id)))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, storage.ErrNotFound
+	for _, ext := range []string{".jpg", ".png"} {
+		data, err := os.ReadFile(filepath.Join(p.path, id+ext))
+		if err == nil {
+			return data, nil
 		}
-
-		return nil, err
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
 	}
-
-	return imageData, nil
+	return nil, storage.ErrNotFound
 }

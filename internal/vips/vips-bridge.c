@@ -17,6 +17,14 @@ int save_image_to_jpeg_buffer(VipsImage *image, void **buf, size_t *len) {
   return vips_jpegsave_buffer(image, buf, len, "interlace", TRUE, "optimize_coding", TRUE, NULL);
 }
 
+int save_image_to_png_buffer(VipsImage *image, void **buf, size_t *len) {
+  if (!vips_image_pio_input(image)) {
+    vips_error("pngsave_buffer", "vips_image_pio_input: no image data\n");
+    return -1;
+  }
+  return vips_pngsave_buffer(image, buf, len, NULL);
+}
+
 int save_image_to_webp_buffer(VipsImage *image, void **buf, size_t *len) {
   // Guard against empty/partial images without data (segfaults in libvips 8.18+)
   if (image == NULL || (image->dtype == VIPS_IMAGE_PARTIAL && image->generate_fn == NULL)) {

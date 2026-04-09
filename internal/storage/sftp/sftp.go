@@ -67,28 +67,36 @@ func New(cfg Config) (*Provider, error) {
 	return &Provider{client: client, basePath: cfg.BasePath}, nil
 }
 
-// Get fetches the image bytes for the given id from the SFTP server.
+// Get fetches the image bytes for the given id from the SFTP server, trying .jpg then .png.
 func (p *Provider) Get(ctx context.Context, id string) ([]byte, error) {
-	remotePath := path.Join(p.basePath, id+".jpg")
-
-	f, err := p.client.Open(remotePath)
-	if err != nil {
-		// pkg/sftp surfaces "does not exist" as os.ErrNotExist via errors.Is
-		return nil, storage.ErrNotFound
+	for _, ext := range []string{".jpg", ".png"} {
+		remotePath := path.Join(p.basePath, id+ext)
+		f, err := p.client.Open(remotePath)
+		if err != nil {
+			continue
+		}
+		defer f.Close()
+		var buf bytes.Buffer
+		if _, err := io.Copy(&buf, f); err != nil {
+			return nil, fmt.Errorf("sftp: reading %s: %w", remotePath, err)
+		}
+		return buf.Bytes(), nil
 	}
-	defer f.Close()
-
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, f); err != nil {
-		return nil, fmt.Errorf("sftp: reading %s: %w", remotePath, err)
-	}
-	return buf.Bytes(), nil
+	return nil, storage.ErrNotFound
 }
 
-// Put writes image bytes to the SFTP server at <basePath>/<id>.jpg.
-// Used by the admin upload handler.
+// Put writes image bytes to the SFTP server at <basePath>/<id>.<ext>.
+// ext should be ".jpg" or ".png" — defaults to ".jpg" if empty.
 func (p *Provider) Put(id string, data []byte) error {
-	remotePath := path.Join(p.basePath, id+".jpg")
+	return p.PutWithExt(id, ".jpg", data)
+}
+
+// PutWithExt writes image bytes preserving the given extension.
+func (p *Provider) PutWithExt(id, ext string, data []byte) error {
+	if ext == "" {
+		ext = ".jpg"
+	}
+	remotePath := path.Join(p.basePath, id+ext)
 
 	// Ensure base directory exists
 	_ = p.client.MkdirAll(p.basePath)
@@ -105,9 +113,12 @@ func (p *Provider) Put(id string, data []byte) error {
 	return nil
 }
 
-// Delete removes a file from the SFTP server.
+// Delete removes a file from the SFTP server (tries .jpg and .png).
 func (p *Provider) Delete(id string) error {
-	return p.client.Remove(path.Join(p.basePath, id+".jpg"))
+	for _, ext := range []string{".jpg", ".png"} {
+		p.client.Remove(path.Join(p.basePath, id+ext))
+	}
+	return nil
 }
 
 // Close shuts down the SFTP session.

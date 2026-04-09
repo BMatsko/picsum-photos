@@ -89,6 +89,9 @@ func (a *Admin) Router() http.Handler {
 	r.HandleFunc("/admin/seeds", a.auth(a.handleSeeds)).Methods("GET")
 	r.HandleFunc("/admin/seeds/clear", a.auth(a.handleClearSeed)).Methods("POST")
 	r.HandleFunc("/admin/docs", a.auth(a.handleDocs)).Methods("GET")
+	r.HandleFunc("/admin/apikeys", a.auth(a.handleAPIKeys)).Methods("GET")
+	r.HandleFunc("/admin/apikeys/create", a.auth(a.handleCreateAPIKey)).Methods("POST")
+	r.HandleFunc("/admin/apikeys/{id}/revoke", a.auth(a.handleRevokeAPIKey)).Methods("POST")
 	// JSON APIs
 	r.HandleFunc("/admin/api/next-id", a.auth(a.handleNextID)).Methods("GET")
 	r.HandleFunc("/admin/api/images", a.auth(a.handleImageList)).Methods("GET")
@@ -205,14 +208,23 @@ func (a *Admin) handleUpload(w http.ResponseWriter, r *http.Request) {
 		imgURL = header.Filename
 	}
 
+	// Determine extension from MIME type
+	fileExt := ".jpg"
+	if header != nil {
+		mt := header.Header.Get("Content-Type")
+		if mt == "image/png" {
+			fileExt = ".png"
+		}
+	}
+
 	// Write file to storage (SFTP or local)
 	if a.SFTP != nil {
-		if err := a.SFTP.Put(id, data); err != nil {
+		if err := a.SFTP.PutWithExt(id, fileExt, data); err != nil {
 			http.Redirect(w, r, "/admin/photos?error=Failed+to+save+file+to+SFTP", http.StatusFound)
 			return
 		}
 	} else {
-		destPath := filepath.Join(a.StoragePath, id+".jpg")
+		destPath := filepath.Join(a.StoragePath, id+fileExt)
 		if err := os.WriteFile(destPath, data, 0644); err != nil {
 			http.Redirect(w, r, "/admin/photos?error=Failed+to+save+file", http.StatusFound)
 			return
@@ -228,7 +240,7 @@ func (a *Admin) handleUpload(w http.ResponseWriter, r *http.Request) {
 		if a.SFTP != nil {
 			_ = a.SFTP.Delete(id)
 		} else {
-			os.Remove(filepath.Join(a.StoragePath, id+".jpg"))
+			os.Remove(filepath.Join(a.StoragePath, id+fileExt))
 		}
 		http.Redirect(w, r, "/admin/photos?error=Database+error", http.StatusFound)
 		return
@@ -313,6 +325,43 @@ func (a *Admin) handleClearSeed(w http.ResponseWriter, r *http.Request) {
 
 func (a *Admin) handleDocs(w http.ResponseWriter, r *http.Request) {
 	a.render(w, "docs.html", map[string]any{"Page": "docs", "RootURL": a.RootURL})
+}
+
+func (a *Admin) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
+	keys, err := a.DB.ListAPIKeys(r.Context())
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	a.render(w, "apikeys.html", map[string]any{
+		"Page": "apikeys", "Keys": keys, "RootURL": a.RootURL,
+		"Success": r.URL.Query().Get("success"),
+		"Error":   r.URL.Query().Get("error"),
+		"NewKey":  r.URL.Query().Get("key"),
+	})
+}
+
+func (a *Admin) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		http.Redirect(w, r, "/admin/apikeys?error=Name+is+required", http.StatusFound)
+		return
+	}
+	_, plaintext, err := a.DB.CreateAPIKey(r.Context(), name)
+	if err != nil {
+		http.Redirect(w, r, "/admin/apikeys?error=Failed+to+create+key", http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, "/admin/apikeys?key="+plaintext, http.StatusFound)
+}
+
+func (a *Admin) handleRevokeAPIKey(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	if err := a.DB.DeleteAPIKey(r.Context(), id); err != nil {
+		http.Redirect(w, r, "/admin/apikeys?error=Failed+to+revoke+key", http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, "/admin/apikeys?success=Key+revoked", http.StatusFound)
 }
 
 func (a *Admin) handleNextID(w http.ResponseWriter, r *http.Request) {

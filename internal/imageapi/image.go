@@ -127,6 +127,8 @@ func getOutputFormat(extension string) image.OutputFormat {
 	switch extension {
 	case ".webp":
 		return image.WebP
+	case ".png":
+		return image.PNG
 	default:
 		return image.JPEG
 	}
@@ -136,6 +138,8 @@ func getContentType(extension string) string {
 	switch extension {
 	case ".webp":
 		return "image/webp"
+	case ".png":
+		return "image/png"
 	default:
 		return "image/jpeg"
 	}

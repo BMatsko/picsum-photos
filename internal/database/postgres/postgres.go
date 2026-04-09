@@ -2,6 +2,10 @@ package postgres
 
 import (
 	"context"
+	cryptorand "crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"math/rand"
 
 	"github.com/DMarby/picsum-photos/internal/database"
@@ -33,6 +37,13 @@ CREATE TABLE IF NOT EXISTS seed_resolutions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_seed_resolutions_seed ON seed_resolutions(seed);
+
+CREATE TABLE IF NOT EXISTS api_keys (
+	id         TEXT PRIMARY KEY,
+	name       TEXT NOT NULL DEFAULT '',
+	key_hash   TEXT NOT NULL UNIQUE,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 `
 
 // New connects to Postgres, runs migrations, and returns a Provider.
@@ -231,4 +242,78 @@ func (p *Provider) NextID(ctx context.Context) (int, error) {
 		return 1, nil
 	}
 	return maxID + 1, nil
+}
+
+// APIKey represents a stored API key record.
+type APIKey struct {
+	ID        string
+	Name      string
+	CreatedAt string
+}
+
+// CreateAPIKey generates a new random key, stores its SHA-256 hash, and returns
+// both the record and the plaintext key (only available at creation time).
+func (p *Provider) CreateAPIKey(ctx context.Context, name string) (APIKey, string, error) {
+	// Generate 32 random bytes → 64-char hex key
+	b := make([]byte, 32)
+	if _, err := cryptorand.Read(b); err != nil {
+		return APIKey{}, "", fmt.Errorf("generate key: %w", err)
+	}
+	plaintext := "pk_" + hex.EncodeToString(b)
+
+	// SHA-256 hash stored in DB
+	hashBytes := sha256.Sum256([]byte(plaintext))
+	keyHash := hex.EncodeToString(hashBytes[:])
+
+	// Random short ID
+	idBytes := make([]byte, 8)
+	cryptorand.Read(idBytes)
+	id := hex.EncodeToString(idBytes)
+
+	_, err := p.pool.Exec(ctx,
+		`INSERT INTO api_keys (id, name, key_hash) VALUES ($1, $2, $3)`,
+		id, name, keyHash,
+	)
+	if err != nil {
+		return APIKey{}, "", fmt.Errorf("insert api key: %w", err)
+	}
+	return APIKey{ID: id, Name: name}, plaintext, nil
+}
+
+// LookupAPIKey checks whether the given plaintext key is valid.
+// Returns the key record if found, ErrNotFound otherwise.
+func (p *Provider) LookupAPIKey(ctx context.Context, plaintext string) (APIKey, error) {
+	hashBytes := sha256.Sum256([]byte(plaintext))
+	keyHash := hex.EncodeToString(hashBytes[:])
+	row := p.pool.QueryRow(ctx,
+		`SELECT id, name FROM api_keys WHERE key_hash = $1`, keyHash)
+	var k APIKey
+	if err := row.Scan(&k.ID, &k.Name); err != nil {
+		return APIKey{}, database.ErrNotFound
+	}
+	return k, nil
+}
+
+// ListAPIKeys returns all API keys (without hashes).
+func (p *Provider) ListAPIKeys(ctx context.Context) ([]APIKey, error) {
+	rows, err := p.pool.Query(ctx,
+		`SELECT id, name, to_char(created_at, 'Mon DD, YYYY HH24:MI') FROM api_keys ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var keys []APIKey
+	for rows.Next() {
+		var k APIKey
+		if err := rows.Scan(&k.ID, &k.Name, &k.CreatedAt); err == nil {
+			keys = append(keys, k)
+		}
+	}
+	return keys, nil
+}
+
+// DeleteAPIKey removes a key by ID.
+func (p *Provider) DeleteAPIKey(ctx context.Context, id string) error {
+	_, err := p.pool.Exec(ctx, `DELETE FROM api_keys WHERE id = $1`, id)
+	return err
 }

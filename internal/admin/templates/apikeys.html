@@ -1,0 +1,66 @@
+{{define "apikeys.html"}}<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>API Keys — Picsum Admin</title>{{template "style" .}}</head>
+<body>{{template "nav" .}}
+<main>
+<h1>API Keys</h1>
+<p class="sub">Keys authenticate requests to <code>POST /api/v1/upload</code>. The plaintext key is only shown once at creation.</p>
+
+{{if .Success}}<div class="alert alert-ok">{{.Success}}</div>{{end}}
+{{if .Error}}<div class="alert alert-err">{{.Error}}</div>{{end}}
+{{if .NewKey}}
+<div class="alert alert-ok" style="font-family:'SF Mono','Fira Code',monospace;word-break:break-all;">
+  <strong>New key created — copy it now, it won't be shown again:</strong><br><br>
+  <span id="newKeyVal" style="font-size:13px;letter-spacing:.02em;">{{.NewKey}}</span>
+  <button onclick="navigator.clipboard.writeText(document.getElementById('newKeyVal').textContent).then(()=>this.textContent='Copied!')" class="btn btn-ghost" style="margin-left:14px;padding:4px 10px;font-size:11px;">Copy</button>
+</div>
+{{end}}
+
+<div class="card">
+  <h2>Create a new key</h2>
+  <form method="POST" action="/admin/apikeys/create" style="display:flex;gap:12px;align-items:flex-end;">
+    <div class="frow" style="flex:1;margin-bottom:0;">
+      <label>Key name</label>
+      <input type="text" name="name" placeholder="e.g. Production, CI pipeline" required>
+    </div>
+    <button type="submit" class="btn btn-primary" style="white-space:nowrap;">Create key</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Active keys ({{len .Keys}})</h2>
+  {{if .Keys}}
+  <table>
+    <thead><tr><th>Name</th><th>ID</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+    {{range .Keys}}
+    <tr>
+      <td style="font-weight:500;">{{.Name}}</td>
+      <td><code>{{.ID}}</code></td>
+      <td style="color:var(--muted);font-size:12px;">{{.CreatedAt}}</td>
+      <td>
+        <form method="POST" action="/admin/apikeys/{{.ID}}/revoke" onsubmit="return confirm('Revoke key {{.ID}} ({{.Name}})? Any integrations using it will stop working.')">
+          <button type="submit" class="btn btn-danger">Revoke</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p style="color:var(--muted);font-size:13px;">No API keys yet.</p>
+  {{end}}
+</div>
+
+<div class="card">
+  <h2>Usage</h2>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:14px;">Upload an image via the API:</p>
+  <pre>curl -X POST {{.RootURL}}/api/v1/upload \
+  -H "Authorization: Bearer &lt;your-key&gt;" \
+  -F "photo=@/path/to/image.jpg" \
+  -F "author=Jane Doe" \
+  -F "tags=nature,portrait"</pre>
+  <p style="color:var(--muted);font-size:12px;margin-top:12px;">Returns <code>201 JSON</code> with the assigned <code>id</code>, dimensions, and tags. See <a href="/admin/docs" class="link">Docs</a> for the full reference.</p>
+</div>
+
+</main></body></html>
+{{end}}

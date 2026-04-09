@@ -127,6 +127,10 @@ func taskProcessor(cache *image.Cache, tracer *tracing.Tracer) func(ctx context.
 			_, span := tracer.Start(ctx, "image.saveToWebPBuffer")
 			buffer, err = processedImage.saveToWebPBuffer()
 			span.End()
+		case image.PNG:
+			_, span := tracer.Start(ctx, "image.saveToPngBuffer")
+			buffer, err = processedImage.saveToPngBuffer()
+			span.End()
 		}
 
 		if err != nil {

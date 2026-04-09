@@ -25,6 +25,7 @@ import (
 	fileStorage "github.com/DMarby/picsum-photos/internal/storage/file"
 	sftpStorage "github.com/DMarby/picsum-photos/internal/storage/sftp"
 	"github.com/DMarby/picsum-photos/internal/admin"
+	"github.com/DMarby/picsum-photos/internal/uploadapi"
 	"github.com/DMarby/picsum-photos/internal/handler"
 	"github.com/DMarby/picsum-photos/internal/health"
 	"github.com/DMarby/picsum-photos/internal/logger"
@@ -199,7 +200,14 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+	uploadAPI := &uploadapi.API{
+		DB:          db,
+		StoragePath: *storagePath,
+		SFTP:        sftpProvider,
+	}
+
 	mux.Handle("/health", handler.Health(checker))
+	mux.Handle("/api/", uploadAPI.Router())
 	mux.Handle("/admin", adminUI.Router())
 	mux.Handle("/admin/", adminUI.Router())
 	// Route image processing — but let /id/{id}/info fall through to the main router

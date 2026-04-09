@@ -61,6 +61,15 @@ func (i *resizedImage) saveToJpegBuffer() ([]byte, error) {
 	return imageBuffer, nil
 }
 
+// saveToPngBuffer returns the image as a PNG byte buffer
+func (i *resizedImage) saveToPngBuffer() ([]byte, error) {
+	imageBuffer, err := vips.SaveToPngBuffer(i.vipsImage)
+	if err != nil {
+		return nil, err
+	}
+	return imageBuffer, nil
+}
+
 // saveToWebPBuffer returns the image as a WebP byte buffer
 func (i *resizedImage) saveToWebPBuffer() ([]byte, error) {
 	imageBuffer, err := vips.SaveToWebPBuffer(i.vipsImage)

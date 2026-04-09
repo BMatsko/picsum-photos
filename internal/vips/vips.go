@@ -136,6 +136,26 @@ func SaveToJpegBuffer(image Image) ([]byte, error) {
 	return buffer, nil
 }
 
+// SaveToPngBuffer saves an image as PNG to a buffer
+func SaveToPngBuffer(image Image) ([]byte, error) {
+	defer UnrefImage(image)
+
+	var bufferPointer unsafe.Pointer
+	bufferLength := C.size_t(0)
+
+	errCode := C.save_image_to_png_buffer(image, &bufferPointer, &bufferLength)
+
+	if errCode != 0 {
+		return nil, fmt.Errorf("error saving to png buffer %s", catchVipsError())
+	}
+
+	buffer := C.GoBytes(bufferPointer, C.int(bufferLength))
+
+	C.g_free(C.gpointer(bufferPointer))
+
+	return buffer, nil
+}
+
 // SaveToWebPBuffer saves an image as WebP to a buffer
 func SaveToWebPBuffer(image Image) ([]byte, error) {
 	defer UnrefImage(image)

@@ -20,6 +20,8 @@ const (
 	JPEG OutputFormat = iota
 	// WebP represents the WebP format
 	WebP
+	// PNG represents the PNG format
+	PNG
 )
 
 // NewTask creates a new image processing task
