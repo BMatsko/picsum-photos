@@ -32,9 +32,24 @@ ALTER TABLE images ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
 
 CREATE TABLE IF NOT EXISTS seed_resolutions (
 	seed       TEXT PRIMARY KEY,
-	image_id   TEXT NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+	image_id   TEXT REFERENCES images(id) ON DELETE SET NULL,
+	tag        TEXT NOT NULL DEFAULT '',
 	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Migrate existing tables: add tag column, change cascade to SET NULL so tag survives deletes
+ALTER TABLE seed_resolutions ADD COLUMN IF NOT EXISTS tag TEXT NOT NULL DEFAULT '';
+ALTER TABLE seed_resolutions ALTER COLUMN image_id DROP NOT NULL;
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'seed_resolutions_image_id_fkey'
+  ) THEN
+    ALTER TABLE seed_resolutions DROP CONSTRAINT seed_resolutions_image_id_fkey;
+    ALTER TABLE seed_resolutions ADD CONSTRAINT seed_resolutions_image_id_fkey
+      FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE SET NULL;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_seed_resolutions_seed ON seed_resolutions(seed);
 
@@ -104,31 +119,47 @@ func (p *Provider) GetRandomWithSeed(ctx context.Context, seed int64) (*database
 // GetRandomWithSeedAndTag resolves a seed, optionally filtering by tag.
 //
 // Resolution order:
-//  1. If a stored resolution exists for this seed, return that image (ignoring tag).
-//  2. Otherwise pick deterministically from the tag-filtered pool (or full pool if tag=""),
-//     store the resolution, and return the image.
+//  1. If a stored resolution exists for this seed AND the image still exists, return it.
+//  2. If a stored resolution row exists but the image was deleted (cascade removed the row),
+//     OR no row exists: look up any stored tag for this seed (from a tag-only row),
+//     then re-resolve using that stored tag (falling back to the request tag, then any).
+//  3. Store the new resolution and tag.
 func (p *Provider) GetRandomWithSeedAndTag(ctx context.Context, seed int64, seedStr string, tag string) (*database.Image, error) {
-	// 1. Check for an existing stored resolution
-	row := p.pool.QueryRow(ctx,
-		`SELECT i.id, i.author, i.url, i.width, i.height
-		 FROM seed_resolutions sr
-		 JOIN images i ON i.id = sr.image_id
-		 WHERE sr.seed = $1`, seedStr)
-	img := &database.Image{}
-	if err := row.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height); err == nil {
-		return img, nil
+	// 1. Look up any existing row for this seed (image_id may be NULL if its image was deleted)
+	var storedImageID *string
+	var storedTag string
+	p.pool.QueryRow(ctx,
+		`SELECT image_id, tag FROM seed_resolutions WHERE seed = $1`, seedStr,
+	).Scan(&storedImageID, &storedTag)
+
+	// If image_id is non-null, the image still exists — return it directly
+	if storedImageID != nil {
+		row := p.pool.QueryRow(ctx,
+			`SELECT id, author, url, width, height FROM images WHERE id = $1`, *storedImageID)
+		img := &database.Image{}
+		if err := row.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height); err == nil {
+			return img, nil
+		}
 	}
 
-	// 2. No stored resolution — pick from pool (filtered by tag if provided)
-	resolved, err := p.getRandomWithSeedAndTag(ctx, seed, tag)
+	// 2. No valid resolution (never set, or image was deleted and image_id is now NULL).
+	//    Stored tag takes precedence over the incoming request tag; blank = no filter.
+	resolveTag := storedTag
+	if resolveTag == "" {
+		resolveTag = tag
+	}
+
+	// 3. Pick from pool using resolveTag
+	resolved, err := p.getRandomWithSeedAndTag(ctx, seed, resolveTag)
 	if err != nil {
 		return nil, err
 	}
 
-	// 3. Store the resolution (ignore conflict — race condition is fine)
+	// 4. Store the resolution AND the tag (upsert — handles both new seeds and re-resolution after delete)
 	_, _ = p.pool.Exec(ctx,
-		`INSERT INTO seed_resolutions (seed, image_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-		seedStr, resolved.ID)
+		`INSERT INTO seed_resolutions (seed, image_id, tag) VALUES ($1, $2, $3)
+		 ON CONFLICT (seed) DO UPDATE SET image_id = EXCLUDED.image_id, tag = EXCLUDED.tag`,
+		seedStr, resolved.ID, resolveTag)
 
 	return resolved, nil
 }

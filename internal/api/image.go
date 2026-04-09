@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/DMarby/picsum-photos/internal/database"
 	"github.com/DMarby/picsum-photos/internal/handler"
@@ -95,7 +96,8 @@ func (a *API) getImage(r *http.Request, imageID string) (*database.Image, *handl
 
 func (a *API) getImageFromSeed(r *http.Request, imageSeed string) (*database.Image, *handler.Error) {
 	murmurHash := murmur3.StringSum64(imageSeed)
-	tag := r.URL.Query().Get("tag")
+	// Blank ?tag= means no filter (any image) — treat same as omitted
+	tag := strings.TrimSpace(r.URL.Query().Get("tag"))
 
 	// If the database supports tag-based seed resolution, use it
 	type taggedDB interface {
