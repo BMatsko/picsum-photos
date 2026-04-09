@@ -1,0 +1,17 @@
+# Railway configuration for picsum-photos
+# Two services share this repo — select the right Dockerfile per service
+# in the Railway dashboard under Settings > Build > Dockerfile Path.
+#
+#   picsum-api      → Dockerfile.picsum
+#   image-service   → Dockerfile.image-service
+#
+# See RAILWAY.md for full setup instructions.
+
+[build]
+builder = "DOCKERFILE"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
