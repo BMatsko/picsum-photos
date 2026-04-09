@@ -16,7 +16,7 @@ import (
 	"github.com/DMarby/picsum-photos/internal/metrics"
 	"github.com/DMarby/picsum-photos/internal/tracing/test"
 
-	fileDatabase "github.com/DMarby/picsum-photos/internal/database/file"
+	postgresDatabase "github.com/DMarby/picsum-photos/internal/database/postgres"
 	"github.com/DMarby/picsum-photos/internal/health"
 	"github.com/DMarby/picsum-photos/internal/logger"
 
@@ -25,7 +25,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// Comandline flags
+// Commandline flags
 var (
 	// Global
 	listen          = flag.String("listen", "", "listen address (tcp host:port or unix socket path)")
@@ -34,8 +34,8 @@ var (
 	imageServiceURL = flag.String("image-service-url", "https://fastly.picsum.photos", "image service url")
 	loglevel        = zap.LevelFlag("log-level", zap.InfoLevel, "log level (default \"info\") (debug, info, warn, error, dpanic, panic, fatal)")
 
-	// Database - File
-	databaseFilePath = flag.String("database-file-path", "./test/fixtures/file/metadata.json", "path to the database file")
+	// Database - Postgres
+	databaseURL = flag.String("database-url", "", "postgres connection string (overridden by DATABASE_URL env var)")
 
 	// HMAC
 	hmacKey = flag.String("hmac-key", "", "hmac key to use for authentication between services")
@@ -44,11 +44,23 @@ var (
 func main() {
 	ctx := context.Background()
 
-	// Parse environment variables
+	// Parse environment variables (PICSUM_ prefix)
 	envy.Parse("PICSUM")
+
+	// Also pick up the standard Railway DATABASE_URL directly
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" && *databaseURL == "" {
+		*databaseURL = dbURL
+	}
 
 	// Parse commandline flags
 	flag.Parse()
+
+	// Re-check after flag parse in case DATABASE_URL was set
+	if *databaseURL == "" {
+		if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+			*databaseURL = dbURL
+		}
+	}
 
 	// Initialize the logger
 	log := logger.New(*loglevel)
@@ -65,10 +77,15 @@ func main() {
 	defer shutdown()
 
 	// Initialize the database
-	database, err := fileDatabase.New(*databaseFilePath)
+	if *databaseURL == "" {
+		log.Fatal("database-url is required (set DATABASE_URL env var or -database-url flag)")
+	}
+
+	database, err := postgresDatabase.New(ctx, *databaseURL)
 	if err != nil {
 		log.Fatalf("error initializing database: %s", err)
 	}
+	defer database.Close()
 
 	// Initialize and start the health checker
 	checkerCtx, checkerCancel := context.WithCancel(ctx)
@@ -114,8 +131,6 @@ func main() {
 		os.Remove(*listen)
 	}
 
-	// Use ListenConfig to pass context for cancellation support
-	// Socket backlog is controlled by the kernel's net.core.somaxconn
 	lc := net.ListenConfig{}
 	listener, err := lc.Listen(ctx, network, *listen)
 	if err != nil {
