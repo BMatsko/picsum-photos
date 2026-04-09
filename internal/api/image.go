@@ -42,6 +42,11 @@ func (a *API) imageRedirectHandler(w http.ResponseWriter, r *http.Request) *hand
 	return a.validateAndRedirect(w, r, p, image, true)
 }
 
+// authorRandomDB is implemented by our postgres provider.
+type authorRandomDB interface {
+	GetRandomByAuthor(ctx context.Context, author string) (*database.Image, error)
+}
+
 func (a *API) randomImageRedirectHandler(w http.ResponseWriter, r *http.Request) *handler.Error {
 	// Get the path and query parameters
 	p, err := params.GetParams(r)
@@ -49,8 +54,18 @@ func (a *API) randomImageRedirectHandler(w http.ResponseWriter, r *http.Request)
 		return handler.BadRequest(err.Error())
 	}
 
-	// Get a random image
-	image, err := a.Database.GetRandom(r.Context())
+	author := strings.TrimSpace(r.URL.Query().Get("author"))
+
+	var image *database.Image
+	if author != "" {
+		if adb, ok := a.Database.(authorRandomDB); ok {
+			image, err = adb.GetRandomByAuthor(r.Context(), author)
+		} else {
+			image, err = a.Database.GetRandom(r.Context())
+		}
+	} else {
+		image, err = a.Database.GetRandom(r.Context())
+	}
 	if err != nil {
 		a.logError(r, "error getting random image from database", err)
 		return handler.InternalServerError()

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/DMarby/picsum-photos/internal/database"
 	"github.com/DMarby/picsum-photos/internal/handler"
@@ -75,14 +76,30 @@ func (a *API) infoSeedHandler(w http.ResponseWriter, r *http.Request) *handler.E
 	return nil
 }
 
-// Paginated list, with `page` and `limit` query parameters
+// authorFilteredDB is implemented by our postgres provider.
+type authorFilteredDB interface {
+	ListByAuthor(ctx context.Context, author string, offset, limit int) ([]database.Image, error)
+}
+
+// Paginated list, with `page`, `limit`, and `author` query parameters
 func (a *API) listHandler(w http.ResponseWriter, r *http.Request) *handler.Error {
 	limit := getLimit(r)
 	page := getPage(r)
+	author := strings.TrimSpace(r.URL.Query().Get("author"))
 
 	offset := limit * (page - 1)
 
-	databaseList, err := a.Database.List(r.Context(), offset, limit)
+	var databaseList []database.Image
+	var err error
+	if author != "" {
+		if adb, ok := a.Database.(authorFilteredDB); ok {
+			databaseList, err = adb.ListByAuthor(r.Context(), author, offset, limit)
+		} else {
+			databaseList, err = a.Database.List(r.Context(), offset, limit)
+		}
+	} else {
+		databaseList, err = a.Database.List(r.Context(), offset, limit)
+	}
 	if err != nil {
 		a.logError(r, "error getting image list from database", err)
 		return handler.InternalServerError()

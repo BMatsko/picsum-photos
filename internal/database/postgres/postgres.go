@@ -110,6 +110,19 @@ func (p *Provider) GetRandom(ctx context.Context) (*database.Image, error) {
 	return img, nil
 }
 
+// GetRandomByAuthor returns a random image filtered by author (case-insensitive exact match).
+func (p *Provider) GetRandomByAuthor(ctx context.Context, author string) (*database.Image, error) {
+	row := p.pool.QueryRow(ctx,
+		`SELECT id, author, url, width, height FROM images WHERE lower(author) = lower($1) ORDER BY random() LIMIT 1`,
+		author)
+	img := &database.Image{}
+	if err := row.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height); err != nil {
+		// Fall back to any random image if author has none
+		return p.GetRandom(ctx)
+	}
+	return img, nil
+}
+
 // GetRandomWithSeed returns a deterministic image for the given seed.
 // Pool order is sorted by id for stability.
 func (p *Provider) GetRandomWithSeed(ctx context.Context, seed int64) (*database.Image, error) {
@@ -231,18 +244,50 @@ func (p *Provider) getRandomWithSeedAndTag(ctx context.Context, seed int64, tag 
 
 // ListAll returns every image sorted by ID.
 func (p *Provider) ListAll(ctx context.Context) ([]database.Image, error) {
-	return p.list(ctx, 0, 1<<31)
+	return p.listFiltered(ctx, "", 0, 1<<31)
 }
 
 // List returns a paginated slice of images sorted by ID.
 func (p *Provider) List(ctx context.Context, offset, limit int) ([]database.Image, error) {
-	return p.list(ctx, offset, limit)
+	return p.listFiltered(ctx, "", offset, limit)
 }
 
-func (p *Provider) list(ctx context.Context, offset, limit int) ([]database.Image, error) {
-	rows, err := p.pool.Query(ctx,
-		`SELECT id, author, url, width, height FROM images ORDER BY id LIMIT $1 OFFSET $2`,
-		limit, offset)
+// ListByAuthor returns a paginated slice filtered by author (case-insensitive contains).
+func (p *Provider) ListByAuthor(ctx context.Context, author string, offset, limit int) ([]database.Image, error) {
+	return p.listFiltered(ctx, author, offset, limit)
+}
+
+func (p *Provider) listFiltered(ctx context.Context, author string, offset, limit int) ([]database.Image, error) {
+	var rows interface {
+		Next() bool
+		Scan(...any) error
+		Close()
+		Err() error
+	}
+	var err error
+	if author != "" {
+		var r interface {
+			Next() bool
+			Scan(...any) error
+			Close()
+			Err() error
+		}
+		r, err = p.pool.Query(ctx,
+			`SELECT id, author, url, width, height FROM images WHERE lower(author) = lower($1) ORDER BY id LIMIT $2 OFFSET $3`,
+			author, limit, offset)
+		rows = r
+	} else {
+		var r interface {
+			Next() bool
+			Scan(...any) error
+			Close()
+			Err() error
+		}
+		r, err = p.pool.Query(ctx,
+			`SELECT id, author, url, width, height FROM images ORDER BY id LIMIT $1 OFFSET $2`,
+			limit, offset)
+		rows = r
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -257,6 +302,40 @@ func (p *Provider) list(ctx context.Context, offset, limit int) ([]database.Imag
 		images = append(images, img)
 	}
 	return images, nil
+}
+
+// ListDistinctTags returns all unique tag values across all images, sorted.
+func (p *Provider) ListDistinctTags(ctx context.Context) ([]string, error) {
+	rows, err := p.pool.Query(ctx, `SELECT DISTINCT unnest(tags) AS tag FROM images ORDER BY tag`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tags []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err == nil && t != "" {
+			tags = append(tags, t)
+		}
+	}
+	return tags, nil
+}
+
+// ListDistinctAuthors returns all unique author values across all images, sorted.
+func (p *Provider) ListDistinctAuthors(ctx context.Context) ([]string, error) {
+	rows, err := p.pool.Query(ctx, `SELECT DISTINCT author FROM images WHERE author != '' ORDER BY author`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var authors []string
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err == nil {
+			authors = append(authors, a)
+		}
+	}
+	return authors, nil
 }
 
 // ListAllWithTags returns images including their tags (for admin use).
