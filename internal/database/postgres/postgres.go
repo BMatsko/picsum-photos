@@ -149,19 +149,40 @@ func (p *Provider) GetRandomWithSeedAndTag(ctx context.Context, seed int64, seed
 		resolveTag = tag
 	}
 
-	// 3. Pick from pool using resolveTag
-	resolved, err := p.getRandomWithSeedAndTag(ctx, seed, resolveTag)
+	// 3. Pick from pool using resolveTag; get back the tag actually used (may differ if tag had no matches)
+	resolved, effectiveTag, err := p.pickWithTag(ctx, seed, resolveTag)
 	if err != nil {
 		return nil, err
 	}
 
-	// 4. Store the resolution AND the tag (upsert — handles both new seeds and re-resolution after delete)
+	// 4. Store the resolution AND the effective tag (upsert)
 	_, _ = p.pool.Exec(ctx,
 		`INSERT INTO seed_resolutions (seed, image_id, tag) VALUES ($1, $2, $3)
 		 ON CONFLICT (seed) DO UPDATE SET image_id = EXCLUDED.image_id, tag = EXCLUDED.tag`,
-		seedStr, resolved.ID, resolveTag)
+		seedStr, resolved.ID, effectiveTag)
 
 	return resolved, nil
+}
+
+// pickWithTag picks a deterministic image, returning both the image and the tag that was
+// actually used for filtering (empty string if the requested tag had no matches and fell back).
+func (p *Provider) pickWithTag(ctx context.Context, seed int64, tag string) (*database.Image, string, error) {
+	img, err := p.getRandomWithSeedAndTag(ctx, seed, tag)
+	if err != nil {
+		return nil, "", err
+	}
+	// If we requested a tag but the result came from the full pool (fallback),
+	// store "" so future re-resolutions don't retry a dead tag.
+	// We detect this by re-checking if the tag pool is non-empty.
+	effectiveTag := tag
+	if tag != "" {
+		var count int
+		p.pool.QueryRow(ctx, `SELECT COUNT(*) FROM images WHERE $1 = ANY(tags)`, tag).Scan(&count)
+		if count == 0 {
+			effectiveTag = ""
+		}
+	}
+	return img, effectiveTag, nil
 }
 
 func (p *Provider) getRandomWithSeedAndTag(ctx context.Context, seed int64, tag string) (*database.Image, error) {
