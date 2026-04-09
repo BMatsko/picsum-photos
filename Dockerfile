@@ -11,9 +11,6 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Add pgx driver (safe to run even if already in go.sum)
-RUN go get github.com/jackc/pgx/v5 && go mod tidy || true
-
 COPY . .
 RUN go build -o /bin/picsum-photos ./cmd/picsum-photos
 
