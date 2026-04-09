@@ -23,6 +23,7 @@ import (
 
 	postgresDatabase "github.com/DMarby/picsum-photos/internal/database/postgres"
 	fileStorage "github.com/DMarby/picsum-photos/internal/storage/file"
+	"github.com/DMarby/picsum-photos/internal/handler"
 	"github.com/DMarby/picsum-photos/internal/health"
 	"github.com/DMarby/picsum-photos/internal/logger"
 
@@ -156,6 +157,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+	mux.Handle("/health", handler.Health(checker))
 	mux.Handle("/id/", imgAPI.Router())
 	mux.Handle("/", mainRouter)
 
