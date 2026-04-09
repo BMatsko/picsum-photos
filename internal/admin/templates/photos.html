@@ -137,14 +137,15 @@
 <script>
 // ── Meta: fetch existing tags + authors ───────────────────────────────────
 var allTags = [], allAuthors = [];
+
+// Fetch meta to populate tag suggestions + author datalist
+// Picklists are initialized at bottom of script after function defs
 fetch('/admin/api/meta').then(r=>r.json()).then(d=>{
   allTags = d.tags || [];
   allAuthors = d.authors || [];
-  // Populate author datalist
   var dl = document.getElementById('authorList');
   allAuthors.forEach(function(a){ var o=document.createElement('option'); o.value=a; dl.appendChild(o); });
-  // Init all tag picklists now that we have tags
-  initAllPicklists();
+  // allTags is now populated — suggestions will work on next keystroke automatically
 });
 
 // ── Tag picklist component ────────────────────────────────────────────────
@@ -221,9 +222,12 @@ function TagPicklist(container, hiddenInput, initialTags) {
     if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx=Math.min(activeIdx+1,items.length-1); highlightSug(); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx=Math.max(activeIdx-1,0); highlightSug(); }
     else if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault();
+      e.preventDefault(); // always prevent — stops form submit AND comma being typed
       if (sugEl && activeIdx >= 0 && items[activeIdx]) { addTag(items[activeIdx].textContent); }
       else if (inputEl.value.trim()) { addTag(inputEl.value); }
+    } else if (e.key === ' ') {
+      // Space also commits a tag
+      if (inputEl.value.trim()) { e.preventDefault(); addTag(inputEl.value); }
     } else if (e.key === 'Backspace' && inputEl.value === '' && tags.length) {
       tags.pop(); render(); sync();
     } else if (e.key === 'Escape') { closeSug(); }
@@ -264,6 +268,9 @@ function initAllPicklists() {
     picklistInstances['row_' + id] = inst;
   });
 }
+
+// Init picklists now that all functions are defined
+initAllPicklists();
 
 // ── Single upload: auto-fill ID + dimensions ──────────────────────────────
 function refreshNextId() {
