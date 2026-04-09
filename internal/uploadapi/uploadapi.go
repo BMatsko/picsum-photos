@@ -59,6 +59,32 @@ func (a *API) Router() http.Handler {
 	return r
 }
 
+// KeyAuthMiddleware wraps any http.Handler and requires a valid API key.
+// The key can be supplied as:
+//   - Authorization: Bearer pk_<key>  header
+//   - ?key=pk_<key>                   query parameter
+//
+// /health is always exempt. Returns 401 JSON on failure.
+func (a *API) KeyAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := ""
+		if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+			token = strings.TrimPrefix(auth, "Bearer ")
+		} else if q := r.URL.Query().Get("key"); q != "" {
+			token = q
+		}
+		if token == "" {
+			jsonError(w, "API key required — pass ?key=<key> or Authorization: Bearer <key>", http.StatusUnauthorized)
+			return
+		}
+		if _, err := a.DB.LookupAPIKey(r.Context(), token); err != nil {
+			jsonError(w, "invalid API key", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // apiKeyAuth middleware — reads Bearer token from Authorization header.
 func (a *API) apiKeyAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

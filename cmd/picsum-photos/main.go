@@ -206,26 +206,27 @@ func main() {
 		SFTP:        sftpProvider,
 	}
 
+	keyAuth := uploadAPI.KeyAuthMiddleware
+
 	mux.Handle("/health", handler.Health(checker))
 	mux.Handle("/api/", uploadAPI.Router())
 	mux.Handle("/admin", adminUI.Router())
 	mux.Handle("/admin/", adminUI.Router())
-	// Route image processing — but let /id/{id}/info fall through to the main router
-	mux.HandleFunc("/id/", func(w http.ResponseWriter, r *http.Request) {
-		// /id/{id}/info must be handled by the main API router
+	// Image processing routes — key-auth gated
+	mux.Handle("/id/", keyAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/info") {
 			mainRouter.ServeHTTP(w, r)
 			return
 		}
 		imgAPIRouter.ServeHTTP(w, r)
-	})
-	// Redirect root to admin
+	})))
+	// Redirect root to admin; all other routes key-auth gated
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			http.Redirect(w, r, "/admin", http.StatusFound)
 			return
 		}
-		mainRouter.ServeHTTP(w, r)
+		keyAuth(mainRouter).ServeHTTP(w, r)
 	})
 
 	server := &http.Server{
