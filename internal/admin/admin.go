@@ -286,13 +286,14 @@ func (a *Admin) handleUpdateTags(w http.ResponseWriter, r *http.Request) {
 func (a *Admin) handleSeeds(w http.ResponseWriter, r *http.Request) {
 	type SeedRow struct {
 		Seed      string
-		ImageID   string
+		ImageID   string // may be empty if image was deleted
 		Author    string
+		Tag       string
 		CreatedAt string
 	}
 	rows, err := a.DB.Pool().Query(r.Context(),
-		`SELECT sr.seed, sr.image_id, i.author, sr.created_at
-		 FROM seed_resolutions sr JOIN images i ON i.id = sr.image_id
+		`SELECT sr.seed, COALESCE(sr.image_id,''), COALESCE(i.author,'(deleted)'), COALESCE(sr.tag,''), sr.created_at
+		 FROM seed_resolutions sr LEFT JOIN images i ON i.id = sr.image_id
 		 ORDER BY sr.created_at DESC LIMIT 200`)
 	var seeds []SeedRow
 	if err == nil {
@@ -300,7 +301,7 @@ func (a *Admin) handleSeeds(w http.ResponseWriter, r *http.Request) {
 		for rows.Next() {
 			var s SeedRow
 			var ts time.Time
-			rows.Scan(&s.Seed, &s.ImageID, &s.Author, &ts)
+			rows.Scan(&s.Seed, &s.ImageID, &s.Author, &s.Tag, &ts)
 			s.CreatedAt = ts.Format("Jan 2, 2006 15:04")
 			seeds = append(seeds, s)
 		}

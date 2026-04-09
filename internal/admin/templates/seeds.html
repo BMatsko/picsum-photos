@@ -56,13 +56,29 @@
   </div>
   {{if .Seeds}}
   <table>
-    <thead><tr><th>Seed</th><th>Resolves to</th><th>Author</th><th>First seen</th><th></th></tr></thead>
+    <thead><tr><th>Seed</th><th>Resolves to</th><th>Author</th><th>Tag filter</th><th>First seen</th><th></th></tr></thead>
     <tbody>
     {{range .Seeds}}
     <tr>
-      <td><code>{{.Seed}}</code></td>
-      <td><a class="link" href="{{$.RootURL}}/id/{{.ImageID}}/200/150" target="_blank"><img style="width:60px;height:40px;object-fit:cover;border-radius:3px;vertical-align:middle;"> <code>{{.ImageID}}</code></a></td>
+      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><code title="{{.Seed}}">{{.Seed}}</code></td>
+      <td>
+        {{if .ImageID}}
+        <a class="link" href="{{$.RootURL}}/id/{{.ImageID}}/200/150" target="_blank">
+          <img style="width:60px;height:40px;object-fit:cover;border-radius:3px;vertical-align:middle;" src="{{$.RootURL}}/id/{{.ImageID}}/120/80">
+          <code>{{.ImageID}}</code>
+        </a>
+        {{else}}
+        <span style="color:var(--muted);font-size:12px;">⚠ image deleted — will re-resolve</span>
+        {{end}}
+      </td>
       <td style="color:var(--muted);font-size:12px;">{{.Author}}</td>
+      <td>
+        {{if .Tag}}
+        <span style="display:inline-block;background:#1e3a5f;color:#7eb8f7;border:1px solid #2a5298;border-radius:3px;padding:2px 8px;font-size:11px;font-weight:600;">{{.Tag}}</span>
+        {{else}}
+        <span style="color:var(--muted);font-size:12px;">any</span>
+        {{end}}
+      </td>
       <td style="color:var(--muted);font-size:12px;">{{.CreatedAt}}</td>
       <td>
         <form method="POST" action="/admin/seeds/clear">
