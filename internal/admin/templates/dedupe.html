@@ -1,0 +1,316 @@
+{{define "dedupe.html"}}<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Deduplicate — Brayden's Pic</title>{{template "style" .}}
+<style>
+.pair-card{background:var(--surface);border:1px solid rgba(253,0,68,.25);border-radius:var(--radius);margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow)}
+.pair-header{padding:10px 16px;background:rgba(253,0,68,.04);border-bottom:1px solid rgba(253,0,68,.12);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sim-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(253,0,68,.1);color:#fd0044}
+.pair-body{display:grid;grid-template-columns:1fr 1fr;min-height:0}
+.pair-side{padding:16px;display:flex;flex-direction:column;gap:8px}
+.pair-side+.pair-side{border-left:1px solid var(--border)}
+.pair-thumb{width:100%;max-height:180px;object-fit:cover;border-radius:8px;background:var(--bg);display:block}
+.pair-meta{font-size:12px;color:var(--muted);line-height:1.6}
+.pair-meta strong{color:var(--text);font-weight:600}
+.tag-pill{display:inline-block;background:rgba(89,84,249,.1);color:#5954F9;border:1px solid rgba(89,84,249,.2);border-radius:4px;font-size:11px;font-weight:600;padding:1px 6px;margin:1px}
+.tag-pill.new{background:rgba(70,202,141,.12);color:#1a8c4a;border-color:rgba(70,202,141,.3)}
+.winner-radio{display:none}
+.winner-label{display:block;cursor:pointer;border:2px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12px;font-weight:600;color:var(--muted);text-align:center;transition:all .12s;user-select:none}
+.winner-label:hover{border-color:var(--blue);color:var(--blue)}
+.winner-radio:checked+.winner-label{border-color:var(--green);background:rgba(70,202,141,.08);color:#1a8c4a}
+.pair-actions{padding:12px 16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;background:var(--bg)}
+.dismissed{opacity:.35;pointer-events:none}
+.scan-progress{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:10px}
+.scan-bar-wrap{flex:1;background:var(--bg);border-radius:4px;height:6px;overflow:hidden;border:1px solid var(--border)}
+.scan-bar{height:100%;background:var(--blue);border-radius:4px;transition:width .2s}
+@media(max-width:600px){.pair-body{grid-template-columns:1fr}.pair-side+.pair-side{border-left:none;border-top:1px solid var(--border)}}
+</style>
+</head>
+<body>{{template "nav" .}}
+{{template "topbar" .}}
+<main>
+<h1>Deduplicate</h1>
+<p class="sub">Visually scans your library for duplicate images using perceptual hashing. All merges require your approval — nothing is deleted automatically.</p>
+
+{{if .Success}}<div class="alert alert-ok">{{.Success}}</div>{{end}}
+{{if .Error}}<div class="alert alert-err">{{.Error}}</div>{{end}}
+
+<!-- Scan controls -->
+<div class="card" id="scanCard">
+  <h2>Scan settings</h2>
+  <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
+    <div class="frow" style="margin-bottom:0;display:flex;align-items:center;gap:8px;">
+      <label style="margin-bottom:0;white-space:nowrap;">Similarity threshold</label>
+      <input type="range" id="thresholdSlider" min="70" max="99" value="90" style="width:120px;" oninput="document.getElementById('thresholdVal').textContent=this.value+'%'">
+      <span id="thresholdVal" style="font-size:13px;font-weight:700;color:var(--blue);min-width:36px;">90%</span>
+    </div>
+    <div style="color:var(--muted);font-size:12px;">Lower = catch more (more false positives). Higher = only near-identical.</div>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <button class="btn btn-primary" id="scanBtn" onclick="startScan()">Run scan</button>
+    <div class="scan-progress" id="scanProgress" style="display:none;flex:1;">
+      <div class="scan-bar-wrap"><div class="scan-bar" id="scanBar" style="width:0%"></div></div>
+      <span id="scanLabel">Loading…</span>
+    </div>
+    <span id="scanSummary" style="font-size:13px;color:var(--muted);"></span>
+  </div>
+</div>
+
+<!-- Results -->
+<div id="results" style="display:none;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+    <h2 style="font-family:var(--font-heading);font-size:14px;font-weight:700;color:var(--teal);margin:0;">
+      Duplicate pairs found: <span id="pairCount">0</span>
+    </h2>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost" style="font-size:12px;" onclick="dismissAll()">Dismiss all</button>
+    </div>
+  </div>
+  <div id="pairList"></div>
+  <p id="noDupes" style="display:none;color:var(--muted);font-size:13px;padding:20px 0;">No duplicates found above the threshold. Your library looks clean.</p>
+</div>
+
+<script>
+var ROOT = '{{.RootURL}}';
+var allImages = [];
+var hashCache = {};   // id → Uint8Array hash
+var pairs = [];       // [{a, b, sim}]
+
+// ── aHash 16×16 ──────────────────────────────────────────────────────────────
+var _hc = document.createElement('canvas');
+_hc.width = _hc.height = 16;
+var _hctx = _hc.getContext('2d', {willReadFrequently: true});
+
+function computeAHash(imgEl) {
+  _hctx.drawImage(imgEl, 0, 0, 16, 16);
+  var px = _hctx.getImageData(0, 0, 16, 16).data;
+  var gray = new Float32Array(256), sum = 0;
+  for (var i = 0; i < 256; i++) {
+    var p = i * 4;
+    gray[i] = px[p]*0.299 + px[p+1]*0.587 + px[p+2]*0.114;
+    sum += gray[i];
+  }
+  var mean = sum / 256;
+  var bits = new Uint8Array(256);
+  for (var j = 0; j < 256; j++) bits[j] = gray[j] >= mean ? 1 : 0;
+  return bits;
+}
+
+function loadImageHash(id) {
+  if (hashCache[id]) return Promise.resolve(hashCache[id]);
+  return new Promise(function(resolve) {
+    var img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = function() {
+      var h = computeAHash(img);
+      hashCache[id] = h;
+      resolve(h);
+    };
+    img.onerror = function() { resolve(null); };
+    img.src = ROOT + '/id/' + id + '/64/64';
+  });
+}
+
+function hammingSim(h1, h2) {
+  if (!h1 || !h2) return 0;
+  var same = 0;
+  for (var i = 0; i < 256; i++) if (h1[i] === h2[i]) same++;
+  return same / 256;
+}
+
+// ── Scan ──────────────────────────────────────────────────────────────────────
+async function startScan() {
+  var threshold = parseInt(document.getElementById('thresholdSlider').value) / 100;
+  var btn = document.getElementById('scanBtn');
+  btn.disabled = true;
+  btn.textContent = 'Scanning…';
+  document.getElementById('scanProgress').style.display = 'flex';
+  document.getElementById('scanSummary').textContent = '';
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('pairList').innerHTML = '';
+  pairs = [];
+  hashCache = {};
+
+  // Fetch image list
+  document.getElementById('scanLabel').textContent = 'Fetching image list…';
+  try {
+    var res = await fetch('/admin/api/images-for-dedupe');
+    allImages = await res.json();
+  } catch(e) {
+    document.getElementById('scanSummary').textContent = 'Error fetching images.';
+    btn.disabled = false; btn.textContent = 'Run scan';
+    return;
+  }
+
+  var n = allImages.length;
+  if (n < 2) {
+    document.getElementById('scanSummary').textContent = 'Need at least 2 photos to scan.';
+    btn.disabled = false; btn.textContent = 'Run scan';
+    return;
+  }
+
+  // Hash all images
+  for (var i = 0; i < n; i++) {
+    var pct = Math.round((i / n) * 70);
+    document.getElementById('scanBar').style.width = pct + '%';
+    document.getElementById('scanLabel').textContent = 'Hashing ' + (i+1) + ' / ' + n + '…';
+    await loadImageHash(allImages[i].id);
+  }
+
+  // Compare all pairs O(n²) — fine for small-medium libraries
+  document.getElementById('scanLabel').textContent = 'Comparing pairs…';
+  var total = n * (n-1) / 2, done = 0;
+  for (var a = 0; a < n; a++) {
+    for (var b = a+1; b < n; b++) {
+      done++;
+      if (done % 50 === 0) {
+        var pct2 = 70 + Math.round((done / total) * 30);
+        document.getElementById('scanBar').style.width = pct2 + '%';
+        await new Promise(function(r){ setTimeout(r, 0); }); // yield to browser
+      }
+      var sim = hammingSim(hashCache[allImages[a].id], hashCache[allImages[b].id]);
+      if (sim >= threshold) {
+        pairs.push({a: allImages[a], b: allImages[b], sim: Math.round(sim * 100)});
+      }
+    }
+  }
+
+  document.getElementById('scanBar').style.width = '100%';
+  document.getElementById('scanLabel').textContent = 'Done';
+  document.getElementById('scanSummary').textContent = pairs.length + ' pair' + (pairs.length===1?'':'s') + ' found';
+
+  renderPairs();
+  document.getElementById('results').style.display = 'block';
+  btn.disabled = false; btn.textContent = 'Re-scan';
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function tagPills(tags, extraTags) {
+  var extra = new Set(extraTags || []);
+  return (tags || []).map(function(t) {
+    return '<span class="tag-pill' + (extra.has(t) ? ' new' : '') + '">' + t + '</span>';
+  }).join('') || '<span style="color:var(--muted);font-size:11px;">none</span>';
+}
+
+function renderPairs() {
+  var list = document.getElementById('pairList');
+  list.innerHTML = '';
+  document.getElementById('pairCount').textContent = pairs.length;
+  document.getElementById('noDupes').style.display = pairs.length ? 'none' : 'block';
+
+  pairs.forEach(function(pair, idx) {
+    // Tags unique to each side (shown as "new" pills on winner after merge)
+    var aTagSet = new Set(pair.a.tags), bTagSet = new Set(pair.b.tags);
+    var aUnique = pair.b.tags.filter(function(t){ return !aTagSet.has(t); });
+    var bUnique = pair.a.tags.filter(function(t){ return !bTagSet.has(t); });
+
+    var card = document.createElement('div');
+    card.className = 'pair-card';
+    card.id = 'pair-' + idx;
+    card.innerHTML =
+      '<div class="pair-header">' +
+        '<span class="sim-badge">' + pair.sim + '% match</span>' +
+        '<span style="font-size:12px;color:var(--muted);">ID <strong style="color:var(--text);">' + pair.a.id + '</strong> vs ID <strong style="color:var(--text);">' + pair.b.id + '</strong></span>' +
+        '<button type="button" onclick="dismissPair(' + idx + ')" style="margin-left:auto;background:none;border:none;font-size:12px;color:var(--muted);cursor:pointer;padding:0;">Dismiss</button>' +
+      '</div>' +
+      '<div class="pair-body">' +
+        renderSide(pair.a, idx, 'a', aUnique) +
+        renderSide(pair.b, idx, 'b', bUnique) +
+      '</div>' +
+      '<div class="pair-actions">' +
+        '<span style="font-size:12px;color:var(--muted);">Select the image to <strong style="color:var(--success-color);">keep</strong> — the other will be merged in and deleted.</span>' +
+        '<button type="button" class="btn btn-primary" style="margin-left:auto;font-size:12px;padding:6px 16px;" onclick="mergePair(' + idx + ')">Merge →</button>' +
+      '</div>';
+    list.appendChild(card);
+  });
+}
+
+function renderSide(img, idx, side, uniqueTags) {
+  var seedCount = 0; // We don't have per-image seed count client-side; show a note instead
+  return (
+    '<div class="pair-side">' +
+      '<img class="pair-thumb" src="' + ROOT + '/id/' + img.id + '/400/200" alt="" loading="lazy">' +
+      '<div style="display:flex;align-items:center;gap:8px;">' +
+        '<input type="radio" name="winner-' + idx + '" id="win-' + idx + '-' + side + '" class="winner-radio" value="' + img.id + '">' +
+        '<label for="win-' + idx + '-' + side + '" class="winner-label" style="flex:1;">Keep this one</label>' +
+      '</div>' +
+      '<div class="pair-meta">' +
+        '<strong>ID:</strong> ' + img.id + '<br>' +
+        '<strong>Author:</strong> ' + (img.author || '—') + '<br>' +
+        '<strong>Dimensions:</strong> ' + img.width + '×' + img.height + '<br>' +
+        '<strong>Tags:</strong> ' + tagPills(img.tags, uniqueTags) +
+        (uniqueTags.length ? '<br><span style="font-size:11px;color:var(--muted);">+ <span style="color:#1a8c4a;">' + uniqueTags.length + ' tag' + (uniqueTags.length>1?'s':'') + '</span> will be merged in from the other image</span>' : '') +
+      '</div>' +
+    '</div>'
+  );
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+function dismissPair(idx) {
+  var card = document.getElementById('pair-' + idx);
+  if (card) card.classList.add('dismissed');
+  // Recount visible
+  var visible = document.querySelectorAll('.pair-card:not(.dismissed)').length;
+  document.getElementById('pairCount').textContent = visible;
+  document.getElementById('noDupes').style.display = visible ? 'none' : 'block';
+}
+
+function dismissAll() {
+  document.querySelectorAll('.pair-card').forEach(function(c){ c.classList.add('dismissed'); });
+  document.getElementById('pairCount').textContent = '0';
+  document.getElementById('noDupes').style.display = 'block';
+}
+
+async function mergePair(idx) {
+  var pair = pairs[idx];
+  var winnerRadio = document.querySelector('input[name="winner-' + idx + '"]:checked');
+  if (!winnerRadio) {
+    alert('Select which image to keep first.');
+    return;
+  }
+  var winnerID = winnerRadio.value;
+  var loserID = (winnerID === pair.a.id) ? pair.b.id : pair.a.id;
+
+  var winnerLabel = 'ID ' + winnerID;
+  var loserLabel = 'ID ' + loserID;
+
+  if (!confirm(
+    'Merge ' + loserLabel + ' into ' + winnerLabel + '?\n\n' +
+    '• Tags from both images will be combined on ' + winnerLabel + '\n' +
+    '• Seeds pointing to ' + loserLabel + ' will be rewritten to ' + winnerLabel + '\n' +
+    '• ' + loserLabel + ' will be permanently deleted from storage\n\n' +
+    'This cannot be undone.'
+  )) return;
+
+  var form = new FormData();
+  form.append('winner', winnerID);
+  form.append('loser', loserID);
+
+  var card = document.getElementById('pair-' + idx);
+  card.style.opacity = '0.5';
+  card.style.pointerEvents = 'none';
+
+  try {
+    var res = await fetch('/admin/dedupe/merge', {method:'POST', body:form, redirect:'manual'});
+    if (res.type === 'opaqueredirect' || res.ok || res.status === 0) {
+      card.style.border = '1px solid rgba(70,202,141,.4)';
+      card.style.background = 'rgba(70,202,141,.04)';
+      card.querySelector('.pair-header').innerHTML =
+        '<span style="font-size:12px;font-weight:700;color:#1a8c4a;">✓ Merged — ' + loserLabel + ' deleted, ' + winnerLabel + ' kept</span>';
+      card.querySelector('.pair-body').style.display = 'none';
+      card.querySelector('.pair-actions').style.display = 'none';
+      // Remove from hashCache so re-scan works
+      delete hashCache[loserID];
+      allImages = allImages.filter(function(img){ return img.id !== loserID; });
+      var visible = document.querySelectorAll('.pair-card:not(.dismissed)').length;
+      document.getElementById('pairCount').textContent = visible;
+    } else {
+      card.style.opacity = '1'; card.style.pointerEvents = '';
+      alert('Merge failed. Check the error banner after page reload.');
+    }
+  } catch(e) {
+    card.style.opacity = '1'; card.style.pointerEvents = '';
+    alert('Network error: ' + e.message);
+  }
+}
+</script>
+</main></body></html>
+{{end}}

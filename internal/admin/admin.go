@@ -113,6 +113,9 @@ func (a *Admin) Router() http.Handler {
 	r.HandleFunc("/admin/apikeys", a.auth(a.handleAPIKeys)).Methods("GET")
 	r.HandleFunc("/admin/apikeys/create", a.auth(a.handleCreateAPIKey)).Methods("POST")
 	r.HandleFunc("/admin/apikeys/{id}/revoke", a.auth(a.handleRevokeAPIKey)).Methods("POST")
+	r.HandleFunc("/admin/dedupe", a.auth(a.handleDedupe)).Methods("GET")
+	r.HandleFunc("/admin/dedupe/merge", a.auth(a.handleMerge)).Methods("POST")
+	r.HandleFunc("/admin/api/images-for-dedupe", a.auth(a.handleImagesForDedupe)).Methods("GET")
 	r.HandleFunc("/admin/tags", a.auth(a.handleTags)).Methods("GET")
 	r.HandleFunc("/admin/tags/create", a.auth(a.handleCreateTag)).Methods("POST")
 	r.HandleFunc("/admin/tags/{id}/update", a.auth(a.handleUpdateTagEntry)).Methods("POST")
@@ -495,6 +498,139 @@ func (a *Admin) handleRevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/admin/apikeys?success=Key+revoked", http.StatusFound)
+}
+
+// ── Deduplication handlers ─────────────────────────────────────────────────────
+
+func (a *Admin) handleDedupe(w http.ResponseWriter, r *http.Request) {
+	a.render(w, "dedupe.html", map[string]any{
+		"Page": "dedupe", "RootURL": a.RootURL,
+		"Success": r.URL.Query().Get("success"),
+		"Error":   r.URL.Query().Get("error"),
+	})
+}
+
+// handleImagesForDedupe returns a lightweight list of all images for client-side hash scanning.
+func (a *Admin) handleImagesForDedupe(w http.ResponseWriter, r *http.Request) {
+	images, err := a.DB.ListAllWithTags(r.Context())
+	if err != nil {
+		jsonError(w, "db error", 500)
+		return
+	}
+	type entry struct {
+		ID     string   `json:"id"`
+		Author string   `json:"author"`
+		Width  int      `json:"width"`
+		Height int      `json:"height"`
+		Tags   []string `json:"tags"`
+		URL    string   `json:"url"`
+	}
+	out := make([]entry, len(images))
+	for i, img := range images {
+		tags := img.Tags
+		if tags == nil {
+			tags = []string{}
+		}
+		out[i] = entry{ID: img.ID, Author: img.Author, Width: img.Width, Height: img.Height, Tags: tags, URL: img.URL}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
+}
+
+// handleMerge merges the loser image into the winner:
+// - union of tags written to winner
+// - all seed_resolutions pointing to loser rewritten to winner
+// - loser DB row deleted (cascades seed_resolutions)
+// - loser file deleted from storage
+func (a *Admin) handleMerge(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/admin/dedupe?error=Bad+request", http.StatusFound)
+		return
+	}
+	winnerID := strings.TrimSpace(r.FormValue("winner"))
+	loserID := strings.TrimSpace(r.FormValue("loser"))
+	if winnerID == "" || loserID == "" || winnerID == loserID {
+		http.Redirect(w, r, "/admin/dedupe?error=Invalid+IDs", http.StatusFound)
+		return
+	}
+
+	ctx := r.Context()
+
+	// 1. Load both images
+	winner, err := a.DB.Pool().Query(ctx, `SELECT tags FROM images WHERE id = $1`, winnerID)
+	if err != nil {
+		http.Redirect(w, r, "/admin/dedupe?error=Winner+not+found", http.StatusFound)
+		return
+	}
+	var winnerTags []string
+	if winner.Next() { winner.Scan(&winnerTags) }
+	winner.Close()
+
+	var loserTags []string
+	loserRow, err := a.DB.Pool().Query(ctx, `SELECT tags FROM images WHERE id = $1`, loserID)
+	if err == nil {
+		if loserRow.Next() { loserRow.Scan(&loserTags) }
+		loserRow.Close()
+	}
+
+	// 2. Union tags (lowercase, deduplicated)
+	tagSet := map[string]struct{}{}
+	for _, t := range winnerTags { tagSet[t] = struct{}{} }
+	for _, t := range loserTags { tagSet[t] = struct{}{} }
+	mergedTags := make([]string, 0, len(tagSet))
+	for t := range tagSet { mergedTags = append(mergedTags, t) }
+	sort.Strings(mergedTags)
+
+	// 3. Write merged tags to winner
+	_, err = a.DB.Pool().Exec(ctx, `UPDATE images SET tags = $2 WHERE id = $1`, winnerID, mergedTags)
+	if err != nil {
+		http.Redirect(w, r, "/admin/dedupe?error=Failed+to+update+winner+tags", http.StatusFound)
+		return
+	}
+
+	// 4. Rewrite seed_resolutions: loser → winner
+	// For any (seed, tag) that the loser owns but winner doesn't already have,
+	// update image_id to winner. Where there's a conflict (winner already has that slot),
+	// the winner's resolution takes precedence — just delete the loser's.
+	_, err = a.DB.Pool().Exec(ctx,
+		`UPDATE seed_resolutions SET image_id = $1
+		 WHERE image_id = $2
+		 AND NOT EXISTS (
+		   SELECT 1 FROM seed_resolutions sr2
+		   WHERE sr2.seed = seed_resolutions.seed
+		   AND sr2.tag = seed_resolutions.tag
+		   AND sr2.image_id = $1
+		 )`,
+		winnerID, loserID)
+	if err != nil {
+		http.Redirect(w, r, "/admin/dedupe?error=Failed+to+rewrite+seeds", http.StatusFound)
+		return
+	}
+
+	// 5. Delete loser from DB (remaining seed_resolutions with loser will SET NULL via FK)
+	if _, err = a.DB.Pool().Exec(ctx, `DELETE FROM images WHERE id = $1`, loserID); err != nil {
+		http.Redirect(w, r, "/admin/dedupe?error=Failed+to+delete+loser", http.StatusFound)
+		return
+	}
+
+	// 6. Delete loser file from storage
+	if a.SFTP != nil {
+		_ = a.SFTP.Delete(loserID)
+	} else {
+		for _, ext := range []string{".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif", ".avif", ".tiff", ".tif"} {
+			os.Remove(filepath.Join(a.StoragePath, loserID+ext))
+		}
+	}
+
+	http.Redirect(w, r,
+		fmt.Sprintf("/admin/dedupe?success=Merged+%%23%s+into+%%23%s", loserID, winnerID),
+		http.StatusFound)
+}
+
+func jsonError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
 // ── Tag Registry handlers ─────────────────────────────────────────────────────
