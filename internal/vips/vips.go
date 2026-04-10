@@ -154,7 +154,12 @@ func SaveToGifBuffer(image Image) ([]byte, error) {
 
 // ResizeAnimated resizes an animated image (GIF/WebP) preserving all frames.
 func ResizeAnimated(imageBuffer []byte, width, height int) (Image, error) {
-	var image Image
+	if len(imageBuffer) == 0 {
+		return nil, fmt.Errorf("empty buffer")
+	}
+
+	var image *C.VipsImage
+
 	errCode := C.resize_animated(
 		unsafe.Pointer(&imageBuffer[0]),
 		C.size_t(len(imageBuffer)),
@@ -163,6 +168,9 @@ func ResizeAnimated(imageBuffer []byte, width, height int) (Image, error) {
 		C.int(height),
 		C.VIPS_INTERESTING_CENTRE,
 	)
+
+	runtime.KeepAlive(imageBuffer)
+
 	if errCode != 0 {
 		return nil, fmt.Errorf("error resizing animated image %s", catchVipsError())
 	}
