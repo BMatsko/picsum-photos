@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/rand"
+	"strings"
 
 	"github.com/DMarby/picsum-photos/internal/database"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -75,6 +76,16 @@ CREATE TABLE IF NOT EXISTS api_keys (
 	key_hash   TEXT NOT NULL UNIQUE,
 	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS tag_registry (
+	id         TEXT PRIMARY KEY,
+	name       TEXT NOT NULL UNIQUE,
+	aliases    TEXT[] NOT NULL DEFAULT '{}',
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Index for fast alias lookup (unnest → GIN)
+CREATE INDEX IF NOT EXISTS idx_tag_registry_aliases ON tag_registry USING GIN(aliases);
 `
 
 // New connects to Postgres, runs migrations, and returns a Provider.
@@ -467,4 +478,115 @@ func (p *Provider) ListAPIKeys(ctx context.Context) ([]APIKey, error) {
 func (p *Provider) DeleteAPIKey(ctx context.Context, id string) error {
 	_, err := p.pool.Exec(ctx, `DELETE FROM api_keys WHERE id = $1`, id)
 	return err
+}
+
+// ── Tag Registry ───────────────────────────────────────────────────────────────
+
+// TagEntry represents a registered tag with its canonical name and aliases.
+type TagEntry struct {
+	ID        string
+	Name      string
+	Aliases   []string
+	CreatedAt string
+}
+
+// ListTagRegistry returns all registered tags sorted by name.
+func (p *Provider) ListTagRegistry(ctx context.Context) ([]TagEntry, error) {
+	rows, err := p.pool.Query(ctx,
+		`SELECT id, name, aliases, to_char(created_at, 'Mon DD, YYYY') FROM tag_registry ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tags []TagEntry
+	for rows.Next() {
+		var t TagEntry
+		var aliases []string
+		if err := rows.Scan(&t.ID, &t.Name, &aliases, &t.CreatedAt); err == nil {
+			if aliases == nil {
+				aliases = []string{}
+			}
+			t.Aliases = aliases
+			tags = append(tags, t)
+		}
+	}
+	return tags, nil
+}
+
+// CreateTag creates a new tag registry entry.
+func (p *Provider) CreateTag(ctx context.Context, name string, aliases []string) (TagEntry, error) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return TagEntry{}, fmt.Errorf("tag name is required")
+	}
+	if aliases == nil {
+		aliases = []string{}
+	}
+	// Normalise aliases
+	for i, a := range aliases {
+		aliases[i] = strings.ToLower(strings.TrimSpace(a))
+	}
+
+	idBytes := make([]byte, 8)
+	cryptorand.Read(idBytes)
+	id := hex.EncodeToString(idBytes)
+
+	_, err := p.pool.Exec(ctx,
+		`INSERT INTO tag_registry (id, name, aliases) VALUES ($1, $2, $3)`,
+		id, name, aliases)
+	if err != nil {
+		return TagEntry{}, fmt.Errorf("create tag: %w", err)
+	}
+	return TagEntry{ID: id, Name: name, Aliases: aliases}, nil
+}
+
+// UpdateTag updates the name and aliases of an existing tag.
+func (p *Provider) UpdateTag(ctx context.Context, id, name string, aliases []string) error {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return fmt.Errorf("tag name is required")
+	}
+	if aliases == nil {
+		aliases = []string{}
+	}
+	for i, a := range aliases {
+		aliases[i] = strings.ToLower(strings.TrimSpace(a))
+	}
+	_, err := p.pool.Exec(ctx,
+		`UPDATE tag_registry SET name=$2, aliases=$3 WHERE id=$1`,
+		id, name, aliases)
+	return err
+}
+
+// DeleteTag removes a tag from the registry.
+func (p *Provider) DeleteTag(ctx context.Context, id string) error {
+	_, err := p.pool.Exec(ctx, `DELETE FROM tag_registry WHERE id=$1`, id)
+	return err
+}
+
+// ResolveTag takes any tag string (canonical name or alias) and returns
+// the canonical name. Returns the input unchanged if no match is found.
+func (p *Provider) ResolveTag(ctx context.Context, tag string) string {
+	if tag == "" {
+		return ""
+	}
+	tag = strings.ToLower(strings.TrimSpace(tag))
+
+	// Exact canonical name match
+	var canonical string
+	err := p.pool.QueryRow(ctx,
+		`SELECT name FROM tag_registry WHERE name = $1`, tag).Scan(&canonical)
+	if err == nil {
+		return canonical
+	}
+
+	// Alias match
+	err = p.pool.QueryRow(ctx,
+		`SELECT name FROM tag_registry WHERE $1 = ANY(aliases)`, tag).Scan(&canonical)
+	if err == nil {
+		return canonical
+	}
+
+	// No registry entry — return as-is (unregistered tags still work)
+	return tag
 }

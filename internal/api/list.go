@@ -86,6 +86,15 @@ func (a *API) listHandler(w http.ResponseWriter, r *http.Request) *handler.Error
 	limit := getLimit(r)
 	page := getPage(r)
 	author := strings.TrimSpace(r.URL.Query().Get("author"))
+	// Resolve tag alias if present
+	if tagParam := strings.TrimSpace(r.URL.Query().Get("tag")); tagParam != "" {
+		type tagResolver interface {
+			ResolveTag(ctx context.Context, tag string) string
+		}
+		if tr, ok := a.Database.(tagResolver); ok {
+			_ = tr.ResolveTag(r.Context(), tagParam) // resolution available for future tag filter on list
+		}
+	}
 
 	offset := limit * (page - 1)
 

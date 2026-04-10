@@ -10,6 +10,7 @@ import (
 	_ "image/jpeg"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,6 +96,10 @@ func (a *Admin) Router() http.Handler {
 	r.HandleFunc("/admin/apikeys", a.auth(a.handleAPIKeys)).Methods("GET")
 	r.HandleFunc("/admin/apikeys/create", a.auth(a.handleCreateAPIKey)).Methods("POST")
 	r.HandleFunc("/admin/apikeys/{id}/revoke", a.auth(a.handleRevokeAPIKey)).Methods("POST")
+	r.HandleFunc("/admin/tags", a.auth(a.handleTags)).Methods("GET")
+	r.HandleFunc("/admin/tags/create", a.auth(a.handleCreateTag)).Methods("POST")
+	r.HandleFunc("/admin/tags/{id}/update", a.auth(a.handleUpdateTagEntry)).Methods("POST")
+	r.HandleFunc("/admin/tags/{id}/delete", a.auth(a.handleDeleteTag)).Methods("POST")
 	// JSON APIs
 	r.HandleFunc("/admin/api/next-id", a.auth(a.handleNextID)).Methods("GET")
 	r.HandleFunc("/admin/api/images", a.auth(a.handleImageList)).Methods("GET")
@@ -411,6 +416,77 @@ func (a *Admin) handleRevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/admin/apikeys?success=Key+revoked", http.StatusFound)
+}
+
+// ── Tag Registry handlers ─────────────────────────────────────────────────────
+
+func (a *Admin) handleTags(w http.ResponseWriter, r *http.Request) {
+	tags, err := a.DB.ListTagRegistry(r.Context())
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	// Count photos per tag
+	photoCounts := map[string]int{}
+	images, _ := a.DB.ListAllWithTags(r.Context())
+	for _, img := range images {
+		for _, t := range img.Tags {
+			photoCounts[t]++
+		}
+	}
+	if tags == nil {
+		tags = []postgres.TagEntry{}
+	}
+	a.render(w, "tags.html", map[string]any{
+		"Page": "tags", "Tags": tags, "PhotoCounts": photoCounts,
+		"Success": r.URL.Query().Get("success"),
+		"Error":   r.URL.Query().Get("error"),
+	})
+}
+
+func (a *Admin) handleCreateTag(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		http.Redirect(w, r, "/admin/tags?error=Name+is+required", http.StatusFound)
+		return
+	}
+	aliases := parseCommaList(r.FormValue("aliases"))
+	if _, err := a.DB.CreateTag(r.Context(), name, aliases); err != nil {
+		http.Redirect(w, r, "/admin/tags?error="+url.QueryEscape(err.Error()), http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, "/admin/tags?success=Tag+created", http.StatusFound)
+}
+
+func (a *Admin) handleUpdateTagEntry(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	name := strings.TrimSpace(r.FormValue("name"))
+	aliases := parseCommaList(r.FormValue("aliases"))
+	if err := a.DB.UpdateTag(r.Context(), id, name, aliases); err != nil {
+		http.Redirect(w, r, "/admin/tags?error="+url.QueryEscape(err.Error()), http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, "/admin/tags?success=Tag+updated", http.StatusFound)
+}
+
+func (a *Admin) handleDeleteTag(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	if err := a.DB.DeleteTag(r.Context(), id); err != nil {
+		http.Redirect(w, r, "/admin/tags?error=Failed+to+delete+tag", http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, "/admin/tags?success=Tag+deleted", http.StatusFound)
+}
+
+func parseCommaList(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		p = strings.ToLower(strings.TrimSpace(p))
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func (a *Admin) handleNextID(w http.ResponseWriter, r *http.Request) {

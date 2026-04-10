@@ -114,6 +114,16 @@ func (a *API) getImageFromSeed(r *http.Request, imageSeed string) (*database.Ima
 	// Normalize tag: trim whitespace, lowercase — tags are stored lowercase
 	tag := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("tag")))
 
+	// Resolve alias to canonical tag name if a registry is available
+	type tagResolver interface {
+		ResolveTag(ctx context.Context, tag string) string
+	}
+	if tag != "" {
+		if tr, ok := a.Database.(tagResolver); ok {
+			tag = tr.ResolveTag(r.Context(), tag)
+		}
+	}
+
 	// If the database supports tag-based seed resolution, use it
 	type taggedDB interface {
 		GetRandomWithSeedAndTag(ctx context.Context, seed int64, seedStr string, tag string) (*database.Image, error)

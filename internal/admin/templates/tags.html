@@ -1,0 +1,195 @@
+{{define "tags.html"}}<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Tags — Brayden's Pic</title>{{template "style" .}}
+<style>
+.alias-chip{display:inline-flex;align-items:center;gap:4px;background:rgba(70,202,141,.1);color:#1a8c4a;border:1px solid rgba(70,202,141,.3);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;white-space:nowrap}
+.alias-chip button{background:none;border:none;color:#1a8c4a;cursor:pointer;font-size:13px;padding:0;line-height:1;opacity:.7}
+.alias-chip button:hover{opacity:1}
+.alias-input-wrap{position:relative}
+.alias-suggestions{position:absolute;top:calc(100% + 3px);left:0;z-index:100;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.1);min-width:180px;max-height:160px;overflow-y:auto}
+.alias-sug-item{padding:7px 12px;font-size:13px;cursor:pointer;color:var(--text)}
+.alias-sug-item:hover{background:#f0f4ff;color:var(--blue)}
+.tag-row td{vertical-align:middle}
+</style>
+</head>
+<body>{{template "nav" .}}
+{{template "topbar" .}}
+<main>
+<h1>Tags</h1>
+<p class="sub">Canonical tag names used across photos and seeds. Aliases let multiple spellings or phrases resolve to the same tag automatically.</p>
+
+{{if .Success}}<div class="alert alert-ok">{{.Success}}</div>{{end}}
+{{if .Error}}<div class="alert alert-err">{{.Error}}</div>{{end}}
+
+<div class="card">
+  <h2>Create a new tag</h2>
+  <form method="POST" action="/admin/tags/create" id="createTagForm">
+    <div class="g2" style="margin-bottom:14px;">
+      <div class="frow" style="margin-bottom:0;">
+        <label>Canonical name <span style="color:var(--red)">*</span></label>
+        <input type="text" name="name" id="newTagName" placeholder="e.g. landscape" required autocomplete="off">
+      </div>
+      <div class="frow" style="margin-bottom:0;">
+        <label>Aliases <span style="color:var(--muted);font-weight:400;font-size:11px;text-transform:none;">(comma-separated)</span></label>
+        <input type="text" name="aliases" id="newTagAliases" placeholder="e.g. landscapes, scenery, outdoor">
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Create tag</button>
+  </form>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+    <h2 style="margin-bottom:0;">Registry (<span id="tagCount">{{len .Tags}}</span>)</h2>
+    <input type="text" id="filterTags" placeholder="Filter tags…" oninput="filterTagRows()" style="width:220px;">
+  </div>
+
+  {{if .Tags}}
+  <div class="table-wrap"><table id="tagTable">
+    <thead><tr><th>Canonical name</th><th>Aliases</th><th>Photos</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+    {{range .Tags}}
+    <tr class="tag-row" data-name="{{.Name}}" data-aliases="{{join .Aliases ","}}">
+      <td>
+        <span style="font-weight:700;color:var(--blue);">{{.Name}}</span>
+      </td>
+      <td>
+        <form method="POST" action="/admin/tags/{{.ID}}/update" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;" class="alias-edit-form" data-id="{{.ID}}" data-name="{{.Name}}" data-aliases="{{join .Aliases ","}}">
+          <input type="hidden" name="name" value="{{.Name}}">
+          <input type="hidden" name="aliases" class="aliases-hidden" value="{{join .Aliases ","}}">
+          <div class="alias-chips" style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;">
+            {{range .Aliases}}
+            <span class="alias-chip">{{.}}<button type="button" onclick="removeAlias(this, '{{.}}')">×</button></span>
+            {{end}}
+            <div class="alias-input-wrap">
+              <input type="text" class="alias-new-input" placeholder="+ alias" autocomplete="off"
+                style="border:1px dashed var(--border);background:transparent;padding:3px 8px;border-radius:6px;font-size:12px;width:90px;color:var(--text);outline:none;"
+                onfocus="this.style.borderColor='var(--blue)'"
+                onblur="this.style.borderColor='var(--border)'"
+                onkeydown="aliasKeydown(event,this)">
+              <div class="alias-suggestions" style="display:none;"></div>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-ghost" style="font-size:11px;padding:4px 10px;">Save</button>
+        </form>
+      </td>
+      <td style="color:var(--muted);font-size:12px;">{{index $.PhotoCounts .Name}}</td>
+      <td style="color:var(--muted);font-size:12px;white-space:nowrap;">{{.CreatedAt}}</td>
+      <td>
+        <form method="POST" action="/admin/tags/{{.ID}}/delete"
+          onsubmit="return confirm('Delete tag \'{{.Name}}\'? This will NOT remove it from photos — only from the registry.')">
+          <button type="submit" class="btn btn-danger" style="font-size:11px;padding:4px 10px;">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  <p id="tagNoResults" style="display:none;color:var(--muted);font-size:13px;margin-top:12px;">No tags match your filter.</p>
+  {{else}}
+  <p style="color:var(--muted);font-size:13px;">No tags registered yet. Create your first one above.</p>
+  {{end}}
+</div>
+
+<div class="card">
+  <h2>How aliases work</h2>
+  <table style="margin-bottom:0;">
+    <tbody>
+      <tr>
+        <td style="width:260px;"><code>/seed/abc?tag=scenery</code></td>
+        <td style="color:var(--muted);font-size:13px;">If <em>scenery</em> is an alias for <strong style="color:var(--text);">landscape</strong> → resolves as <code>?tag=landscape</code></td>
+      </tr>
+      <tr>
+        <td><code>/seed/abc?tag=Landscape</code></td>
+        <td style="color:var(--muted);font-size:13px;">Case-insensitive — resolves to canonical <strong style="color:var(--text);">landscape</strong></td>
+      </tr>
+      <tr>
+        <td><code>/seed/abc?tag=unknown</code></td>
+        <td style="color:var(--muted);font-size:13px;">No match in registry → used as-is (unregistered tags still work)</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+var allTagNames = [{{range .Tags}}'{{.Name}}',{{end}}];
+
+function filterTagRows() {
+  var f = document.getElementById('filterTags').value.toLowerCase();
+  var rows = document.querySelectorAll('#tagTable tbody tr.tag-row');
+  var visible = 0;
+  rows.forEach(function(row) {
+    var name = row.dataset.name.toLowerCase();
+    var aliases = row.dataset.aliases.toLowerCase();
+    var show = name.includes(f) || aliases.includes(f);
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  document.getElementById('tagCount').textContent = visible;
+  document.getElementById('tagNoResults').style.display = visible ? 'none' : 'block';
+}
+
+// ── Alias chip editing ───────────────────────────────────────────────────────
+function getAliases(form) {
+  var hidden = form.querySelector('.aliases-hidden');
+  var val = hidden.value.trim();
+  return val ? val.split(',').map(function(a){return a.trim();}).filter(Boolean) : [];
+}
+function setAliases(form, arr) {
+  form.querySelector('.aliases-hidden').value = arr.join(',');
+}
+
+function removeAlias(btn, alias) {
+  var form = btn.closest('form');
+  var aliases = getAliases(form);
+  aliases = aliases.filter(function(a){return a !== alias;});
+  setAliases(form, aliases);
+  btn.closest('.alias-chip').remove();
+}
+
+function addAliasChip(form, alias) {
+  alias = alias.trim().toLowerCase();
+  if (!alias) return;
+  var aliases = getAliases(form);
+  if (aliases.indexOf(alias) !== -1) return; // no duplicates
+  aliases.push(alias);
+  setAliases(form, aliases);
+
+  var chip = document.createElement('span');
+  chip.className = 'alias-chip';
+  chip.innerHTML = alias + '<button type="button" onclick="removeAlias(this,\'' + alias + '\')">×</button>';
+  var inputWrap = form.querySelector('.alias-input-wrap');
+  form.querySelector('.alias-chips').insertBefore(chip, inputWrap);
+}
+
+function aliasKeydown(e, input) {
+  if (e.key === 'Enter' || e.key === ',' || e.key === 'Tab') {
+    e.preventDefault();
+    var val = input.value.trim().toLowerCase().replace(/,/g,'');
+    if (val) { addAliasChip(input.closest('form'), val); input.value = ''; }
+    closeSuggestions(input);
+  } else if (e.key === 'Escape') {
+    closeSuggestions(input);
+  }
+}
+
+function closeSuggestions(input) {
+  var sug = input.nextElementSibling;
+  if (sug) { sug.style.display = 'none'; }
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.classList.contains('alias-new-input')) {
+    document.querySelectorAll('.alias-suggestions').forEach(function(s){ s.style.display='none'; });
+  }
+});
+
+// When user blurs alias input without pressing Enter, auto-add if non-empty
+document.querySelectorAll('.alias-new-input').forEach(function(input) {
+  input.addEventListener('blur', function() {
+    var val = input.value.trim().toLowerCase().replace(/,/g,'');
+    if (val) { addAliasChip(input.closest('form'), val); input.value = ''; }
+  });
+});
+</script>
+</main></body></html>
+{{end}}
