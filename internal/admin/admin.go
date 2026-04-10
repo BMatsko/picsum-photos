@@ -434,11 +434,27 @@ func (a *Admin) handleTags(w http.ResponseWriter, r *http.Request) {
 			photoCounts[t]++
 		}
 	}
+
+	// Count seed resolutions per tag
+	seedCounts := map[string]int{}
+	seedRows, err := a.DB.Pool().Query(r.Context(),
+		`SELECT tag, COUNT(*) FROM seed_resolutions WHERE tag != '' GROUP BY tag`)
+	if err == nil {
+		defer seedRows.Close()
+		for seedRows.Next() {
+			var t string
+			var c int
+			if seedRows.Scan(&t, &c) == nil {
+				seedCounts[t] = c
+			}
+		}
+	}
+
 	if tags == nil {
 		tags = []postgres.TagEntry{}
 	}
 	a.render(w, "tags.html", map[string]any{
-		"Page": "tags", "Tags": tags, "PhotoCounts": photoCounts,
+		"Page": "tags", "Tags": tags, "PhotoCounts": photoCounts, "SeedCounts": seedCounts,
 		"Success": r.URL.Query().Get("success"),
 		"Error":   r.URL.Query().Get("error"),
 	})

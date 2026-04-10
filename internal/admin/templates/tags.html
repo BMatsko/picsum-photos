@@ -73,6 +73,7 @@
         </form>
       </td>
       <td style="color:var(--muted);font-size:12px;">{{index $.PhotoCounts .Name}}</td>
+      <td style="color:var(--muted);font-size:12px;">{{index $.SeedCounts .Name}}</td>
       <td style="color:var(--muted);font-size:12px;white-space:nowrap;">{{.CreatedAt}}</td>
       <td>
         <form method="POST" action="/admin/tags/{{.ID}}/delete"
