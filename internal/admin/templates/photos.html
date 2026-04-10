@@ -49,6 +49,7 @@
 </style>
 </head>
 <body>{{template "nav" .}}
+{{template "topbar" .}}
 <main>
 <h1>Photos</h1>
 <p class="sub">Each photo needs a matching <code>&lt;id&gt;.jpg</code> or <code>&lt;id&gt;.png</code> file. Width/height auto-detect from the image.</p>
@@ -144,7 +145,7 @@
     <input type="text" id="filterPhotoTag" placeholder="Filter by tag…" oninput="filterPhotos()" style="flex:1;min-width:100px;">
     <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="clearPhotoFilters()">Clear filters</button>
   </div>
-  <table id="photoTable">
+  <div class="table-wrap"><table id="photoTable">
     <thead><tr><th>Preview</th><th>ID</th><th>Author</th><th>Dimensions</th><th>Tags</th><th></th></tr></thead>
     <tbody>
     {{range .Images}}
@@ -170,7 +171,7 @@
     </tr>
     {{end}}
     </tbody>
-  </table>
+  </table></div>
   <p id="photoNoResults" style="display:none;color:var(--muted);font-size:13px;margin-top:12px;">No photos match your filter.</p>
   {{else}}
   <p style="color:var(--muted);font-size:13px;">No photos yet. Upload your first one above.</p>

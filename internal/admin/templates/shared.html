@@ -94,6 +94,28 @@ select:focus{border-color:var(--blue)}
 .fr>*{flex:1}
 .frow{margin-bottom:14px}
 
+/* ── Mobile top bar (hidden on desktop) ── */
+.topbar{display:none;align-items:center;gap:10px;padding:12px 16px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;flex-shrink:0}
+.topbar .brand-text{font-family:var(--font-heading);font-size:13px;font-weight:700;letter-spacing:-0.02em;color:var(--teal)}
+.topbar svg.logo{width:16px;height:20px;flex-shrink:0}
+.hamburger{margin-left:auto;background:none;border:1px solid var(--border);border-radius:8px;cursor:pointer;padding:6px 8px;color:var(--teal);display:flex;align-items:center;line-height:1}
+.nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:98}
+.nav-overlay.open{display:block}
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+/* ── Mobile responsive ── */
+@media(max-width:768px){
+  body{flex-direction:column;height:auto;overflow:auto}
+  nav{position:fixed;top:0;left:0;z-index:99;height:100%;min-height:100%;transform:translateX(-100%);transition:transform .25s ease;box-shadow:4px 0 24px rgba(0,0,0,.15)}
+  nav.open{transform:translateX(0)}
+  .topbar{display:flex}
+  main{height:auto;padding:20px 16px;overflow-y:visible}
+  .g2,.g3{grid-template-columns:1fr}
+  .card{padding:16px}
+  h1{font-size:18px}
+  pre{font-size:11px}
+}
+
 /* ── Stats ── */
 .stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 22px;box-shadow:var(--shadow)}
 .stat .num{font-family:var(--font-heading);font-size:30px;font-weight:700;letter-spacing:-0.02em;color:var(--teal)}
@@ -109,7 +131,7 @@ a.link:hover{text-decoration:underline}
 {{end}}
 
 {{define "nav"}}
-<nav>
+<nav id="sideNav">
   <div class="brand">
     <svg viewBox="0 0 90 110" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M10 6C10 8.20914 11.7909 10 14 10H48.3438C49.4044 10.0002 50.4219 10.4219 51.1719 11.1719L68.8281 28.8281C69.5781 29.5781 69.9998 30.5956 70 31.6562V46C70 48.2091 71.7909 50 74 50H86C88.2091 50 90 51.7909 90 54V90C90 101.046 81.0457 110 70 110H14C11.7909 110 10 108.209 10 106V94C10 91.7909 8.20914 90 6 90H4C1.79086 90 1.12747e-07 88.2091 0 86V34C0 31.7909 1.79086 30 4 30H6C8.20914 30 10 28.2091 10 26V14C10 11.7909 8.20914 10 6 10H5C2.23858 10 0 7.76142 0 5C0 2.23858 2.23858 0 5 0C7.76142 0 10 2.23858 10 5V6ZM14 30C11.7909 30 10 31.7909 10 34V86C10 88.2091 11.7909 90 14 90H66C68.2091 90 70 88.2091 70 86V54C70 51.7909 68.2091 50 66 50H54C51.7909 50 50 48.2091 50 46V34C50 31.7909 48.2091 30 46 30H14Z" fill="url(#bnav)"/><defs><linearGradient id="bnav" x1="0" y1="0" x2="100" y2="146" gradientUnits="userSpaceOnUse"><stop stop-color="#0E1AFD"/><stop offset="1" stop-color="#E4BFF1"/></linearGradient></defs></svg>
     <span class="brand-text">Brayden's Pic</span>
@@ -126,4 +148,17 @@ a.link:hover{text-decoration:underline}
     </form>
   </div>
 </nav>
+{{end}}
+
+{{define "topbar"}}
+<div class="nav-overlay" id="navOverlay" onclick="closeNav()"></div>
+<div class="topbar">
+  <svg class="logo" viewBox="0 0 90 110" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M10 6C10 8.20914 11.7909 10 14 10H48.3438C49.4044 10.0002 50.4219 10.4219 51.1719 11.1719L68.8281 28.8281C69.5781 29.5781 69.9998 30.5956 70 31.6562V46C70 48.2091 71.7909 50 74 50H86C88.2091 50 90 51.7909 90 54V90C90 101.046 81.0457 110 70 110H14C11.7909 110 10 108.209 10 106V94C10 91.7909 8.20914 90 6 90H4C1.79086 90 1.12747e-07 88.2091 0 86V34C0 31.7909 1.79086 30 4 30H6C8.20914 30 10 28.2091 10 26V14C10 11.7909 8.20914 10 6 10H5C2.23858 10 0 7.76142 0 5C0 2.23858 2.23858 0 5 0C7.76142 0 10 2.23858 10 5V6ZM14 30C11.7909 30 10 31.7909 10 34V86C10 88.2091 11.7909 90 14 90H66C68.2091 90 70 88.2091 70 86V54C70 51.7909 68.2091 50 66 50H54C51.7909 50 50 48.2091 50 46V34C50 31.7909 48.2091 30 46 30H14Z" fill="url(#btop)"/><defs><linearGradient id="btop" x1="0" y1="0" x2="100" y2="146" gradientUnits="userSpaceOnUse"><stop stop-color="#0E1AFD"/><stop offset="1" stop-color="#E4BFF1"/></linearGradient></defs></svg>
+  <span class="brand-text">Brayden's Pic</span>
+  <button class="hamburger" onclick="openNav()" aria-label="Open menu">&#9776;</button>
+</div>
+<script>
+function openNav(){document.getElementById('sideNav').classList.add('open');document.getElementById('navOverlay').classList.add('open');}
+function closeNav(){document.getElementById('sideNav').classList.remove('open');document.getElementById('navOverlay').classList.remove('open');}
+</script>
 {{end}}

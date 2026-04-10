@@ -1,6 +1,7 @@
 {{define "seeds.html"}}<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><title>Seeds — Brayden's Pic</title>{{template "style" .}}</head>
 <body>{{template "nav" .}}
+{{template "topbar" .}}
 <main>
 <h1>Seeds</h1>
 <p class="sub">Each (seed, tag) combination resolves to its own image independently. Revisiting the same combination always returns the same image.</p>
@@ -10,7 +11,7 @@
 
 <div class="card">
   <h2>How it works</h2>
-  <table style="margin-bottom:0;">
+  <div class="table-wrap"><table style="margin-bottom:0;">
     <tbody>
       <tr>
         <td style="width:240px;"><code>/seed/abc/400/300</code></td>
@@ -29,7 +30,7 @@
         <td style="color:var(--muted);font-size:13px;">Returns the original nature image — slot memory is permanent</td>
       </tr>
     </tbody>
-  </table>
+  </table></div>
 </div>
 
 <div class="card">
@@ -81,7 +82,7 @@
     <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="clearSeedFilters()">Clear filters</button>
   </div>
 
-  <table id="seedTable">
+  <div class="table-wrap"><table id="seedTable">
     <thead>
       <tr>
         <th>Seed</th>
@@ -139,7 +140,7 @@
       {{end}}
     {{end}}
     </tbody>
-  </table>
+  </table></div>
   <p id="seedNoResults" style="display:none;color:var(--muted);font-size:13px;margin-top:12px;">No seeds match your filter.</p>
   {{else}}
   <p style="color:var(--muted);font-size:13px;">No seeds resolved yet. Use the tester above or make a <code>/seed/*</code> API request.</p>

@@ -1,6 +1,7 @@
 {{define "apikeys.html"}}<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><title>API Keys — Brayden's Pic</title>{{template "style" .}}</head>
 <body>{{template "nav" .}}
+{{template "topbar" .}}
 <main>
 <h1>API Keys</h1>
 <p class="sub">Keys authenticate requests to <code>POST /api/v1/upload</code>. The plaintext key is only shown once at creation.</p>
@@ -33,7 +34,7 @@
     <input type="text" id="filterKeyName" placeholder="Filter by name…" oninput="filterKeys()" style="flex:1;">
     <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="document.getElementById('filterKeyName').value='';filterKeys()">Clear</button>
   </div>
-  <table id="keyTable">
+  <div class="table-wrap"><table id="keyTable">
     <thead><tr><th>Name</th><th>ID</th><th>Created</th><th></th></tr></thead>
     <tbody>
     {{range .Keys}}
@@ -49,7 +50,7 @@
     </tr>
     {{end}}
     </tbody>
-  </table>
+  </table></div>
   {{else}}
   <p style="color:var(--muted);font-size:13px;">No API keys yet.</p>
   {{end}}

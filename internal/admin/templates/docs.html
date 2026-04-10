@@ -9,66 +9,66 @@
   <h2>Random image</h2>
   <pre>GET /[width]/[height]</pre>
   <p style="color:var(--muted);font-size:13px;margin-top:10px;">Returns a different random image on every request. Not cacheable.</p>
-  <table style="margin-top:14px;">
+  <div class="table-wrap"><table style="margin-top:14px;">
     <thead><tr><th>Example</th><th>Result</th></tr></thead>
     <tbody>
       <tr><td><code>{{.RootURL}}/200/300</code></td><td style="color:var(--muted);font-size:12px;">200×300 random image</td></tr>
       <tr><td><code>{{.RootURL}}/400/400</code></td><td style="color:var(--muted);font-size:12px;">400×400 square random image</td></tr>
     </tbody>
-  </table>
+  </table></div>
 </div>
 
 <div class="card">
   <h2>Seeded image</h2>
   <pre>GET /seed/[seed]/[width]/[height]</pre>
   <p style="color:var(--muted);font-size:13px;margin-top:10px;">The same seed always returns the same photo. Seed can be any string. Cached for 1 day.</p>
-  <table style="margin-top:14px;">
+  <div class="table-wrap"><table style="margin-top:14px;">
     <thead><tr><th>Example</th><th>Result</th></tr></thead>
     <tbody>
       <tr><td><code>{{.RootURL}}/seed/hello/400/300</code></td><td style="color:var(--muted);font-size:12px;">Always the same photo for "hello"</td></tr>
       <tr><td><code>{{.RootURL}}/seed/user-123/200/200</code></td><td style="color:var(--muted);font-size:12px;">Per-user stable avatar</td></tr>
     </tbody>
-  </table>
+  </table></div>
 </div>
 
 <div class="card">
   <h2>Image by ID</h2>
   <pre>GET /id/[id]/[width]/[height]</pre>
   <p style="color:var(--muted);font-size:13px;margin-top:10px;">Fetch a specific photo by ID. Cached for 1 day.</p>
-  <table style="margin-top:14px;">
+  <div class="table-wrap"><table style="margin-top:14px;">
     <thead><tr><th>Example</th></tr></thead>
     <tbody>
       <tr><td><code>{{.RootURL}}/id/1/400/300</code></td></tr>
     </tbody>
-  </table>
+  </table></div>
 </div>
 
 <div class="card">
   <h2>Query parameters</h2>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Parameter</th><th>Example</th><th>Effect</th></tr></thead>
     <tbody>
       <tr><td><code>?grayscale</code></td><td><code>/200/300?grayscale</code></td><td style="color:var(--muted);font-size:12px;">Convert to grayscale</td></tr>
       <tr><td><code>?blur</code></td><td><code>/200/300?blur</code></td><td style="color:var(--muted);font-size:12px;">Blur with default amount (5)</td></tr>
       <tr><td><code>?blur=1–10</code></td><td><code>/200/300?blur=2</code></td><td style="color:var(--muted);font-size:12px;">Blur with custom intensity</td></tr>
     </tbody>
-  </table>
+  </table></div>
 </div>
 
 <div class="card">
   <h2>Formats</h2>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Extension</th><th>Example</th></tr></thead>
     <tbody>
       <tr><td><code>.jpg</code> (default)</td><td><code>{{.RootURL}}/200/300.jpg</code></td></tr>
       <tr><td><code>.webp</code></td><td><code>{{.RootURL}}/200/300.webp</code></td></tr>
     </tbody>
-  </table>
+  </table></div>
 </div>
 
 <div class="card">
   <h2>List & info endpoints</h2>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Endpoint</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td><code>GET /v2/list</code></td><td style="color:var(--muted);font-size:12px;">All photos as JSON. Add <code>?page=2&amp;limit=10</code> to paginate.</td></tr>
@@ -76,7 +76,7 @@
       <tr><td><code>GET /seed/[seed]/info</code></td><td style="color:var(--muted);font-size:12px;">Metadata JSON for a seeded photo.</td></tr>
       <tr><td><code>GET /health</code></td><td style="color:var(--muted);font-size:12px;">Health check JSON (used by Railway).</td></tr>
     </tbody>
-  </table>
+  </table></div>
 </div>
 </main></body></html>
 {{end}}
