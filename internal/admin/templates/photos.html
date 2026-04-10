@@ -437,17 +437,47 @@ document.getElementById('bulkFiles').addEventListener('change', async function(e
 
     var row = document.createElement('div');
     row.id = 'bulk-row-' + i;
-    var borderColor = dupe ? 'rgba(230,180,0,.4)' : 'var(--border)';
-    var bg = dupe ? 'rgba(230,180,0,.05)' : 'var(--bg)';
-    row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:4px;margin-bottom:4px;background:'+bg+';border:1px solid '+borderColor+';font-size:12px;';
-    var dupeHint = dupe ? '<span title="Possible duplicate: matches #'+dupe.id+' ('+dupe.author+') by '+(dupe.match==='filename'?'same filename':'same dimensions')+'" style="color:#e6b400;white-space:nowrap;cursor:default;">&#9888; Possible duplicate</span>' : '';
-    var statusLabel = dupe ? '<span id="bulk-status-'+i+'" style="min-width:80px;text-align:right;font-weight:500;color:#e6b400;">Flagged</span>'
-                           : '<span id="bulk-status-'+i+'" style="min-width:80px;text-align:right;font-weight:500;">Pending</span>';
-    row.innerHTML =
-      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);" title="'+f.name+'">'+f.name+'</span>' +
-      '<span style="color:var(--muted);white-space:nowrap;">'+dim.w+'×'+dim.h+'</span>' +
-      '<span style="color:var(--muted);white-space:nowrap;">'+(f.size/1024/1024).toFixed(1)+' MB</span>' +
-      dupeHint + statusLabel;
+
+    if (dupe) {
+      // Side-by-side comparison card for duplicates
+      var previewURL = URL.createObjectURL(f);
+      var matchLabel = dupe.match === 'filename' ? 'same filename' : 'same dimensions';
+      var existingThumb = '{{.RootURL}}/id/' + dupe.id + '/160/120';
+      row.style.cssText = 'border:1px solid rgba(253,0,68,.25);border-radius:10px;margin-bottom:8px;background:#fff;overflow:hidden;';
+      row.innerHTML =
+        '<div style="padding:10px 14px 8px;display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid rgba(253,0,68,.1);">' +
+          '<div style="display:flex;align-items:center;gap:8px;">' +
+            '<span style="font-size:11px;font-weight:700;background:rgba(253,0,68,.1);color:#fd0044;border-radius:4px;padding:2px 7px;">Possible duplicate</span>' +
+            '<span style="font-size:12px;color:var(--muted);">'+matchLabel+'</span>' +
+          '</div>' +
+          '<div style="display:flex;align-items:center;gap:8px;">' +
+            '<span id="bulk-status-'+i+'" style="font-size:12px;font-weight:600;color:#fd0044;">Flagged</span>' +
+            '<button type="button" onclick="removeFromQueue('+i+')" style="font-size:12px;padding:4px 10px;background:transparent;border:1px solid #fd0044;color:#fd0044;border-radius:6px;cursor:pointer;font-weight:600;white-space:nowrap;">Remove</button>' +
+          '</div>' +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;">' +
+          '<div style="padding:12px;border-right:1px solid var(--border);">' +
+            '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px;">New upload</div>' +
+            '<img src="'+previewURL+'" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;background:var(--border);display:block;">' +
+            '<div style="margin-top:6px;font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+f.name+'">'+f.name+'</div>' +
+            '<div style="font-size:11px;color:var(--muted);">'+dim.w+'×'+dim.h+' &nbsp;·&nbsp; '+(f.size/1024/1024).toFixed(1)+' MB</div>' +
+          '</div>' +
+          '<div style="padding:12px;">' +
+            '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px;">In library (ID '+dupe.id+')</div>' +
+            '<img src="'+existingThumb+'" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;background:var(--border);display:block;">' +
+            '<div style="margin-top:6px;font-size:11px;color:var(--text);">'+dupe.author+'</div>' +
+            '<div style="font-size:11px;color:var(--muted);">'+matchLabel+'</div>' +
+          '</div>' +
+        '</div>';
+    } else {
+      // Normal compact row for clean files
+      row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 12px;border-radius:8px;margin-bottom:4px;background:var(--bg);border:1px solid var(--border);font-size:12px;';
+      row.innerHTML =
+        '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);" title="'+f.name+'">'+f.name+'</span>' +
+        '<span style="color:var(--muted);white-space:nowrap;">'+dim.w+'×'+dim.h+'</span>' +
+        '<span style="color:var(--muted);white-space:nowrap;">'+(f.size/1024/1024).toFixed(1)+' MB</span>' +
+        '<span id="bulk-status-'+i+'" style="min-width:70px;text-align:right;font-weight:600;color:var(--muted);">Pending</span>';
+    }
     rows.appendChild(row);
   }
 
@@ -461,10 +491,26 @@ document.getElementById('bulkFiles').addEventListener('change', async function(e
     var banner = document.createElement('div');
     banner.id = 'bulkDupeBanner';
     banner.style.cssText = 'padding:10px 14px;border-radius:4px;margin-bottom:12px;font-size:12px;background:rgba(230,180,0,.08);border:1px solid rgba(230,180,0,.35);color:#e6b400;display:flex;gap:10px;align-items:center;';
-    banner.innerHTML = '<span>&#9888;</span><span>'+dupeCount+' file'+(dupeCount>1?'s have':' has')+' a possible match in your library. They are highlighted below — you can still upload them if intended.</span>';
+    banner.innerHTML = '<span>&#9888;</span><span>'+dupeCount+' possible duplicate'+(dupeCount>1?'s':'')+' found. Review the side-by-side comparison below and click <strong>Remove</strong> to exclude any from the upload.</span>';
     document.getElementById('bulkRows').before(banner);
   }
 });
+
+function removeFromQueue(i) {
+  bulkFiles[i] = null; // null = removed
+  var row = document.getElementById('bulk-row-' + i);
+  if (row) {
+    row.style.opacity = '0.4';
+    row.style.pointerEvents = 'none';
+    var btn = row.querySelector('button[onclick]');
+    if (btn) btn.remove();
+    var statusEl = document.getElementById('bulk-status-' + i);
+    if (statusEl) { statusEl.textContent = 'Removed'; statusEl.style.color = 'var(--muted)'; }
+  }
+  // Update the count in status bar
+  var remaining = bulkFiles.filter(function(f){return f!==null;}).length;
+  document.getElementById('bulkStatus').textContent = remaining + ' file' + (remaining===1?'':'s') + ' queued';
+}
 
 function setRowStatus(i, text, color) {
   var el = document.getElementById('bulk-status-' + i);
@@ -489,7 +535,8 @@ document.getElementById('bulkStart').addEventListener('click', async function() 
 
   for (var i = 0; i < bulkFiles.length; i++) {
     var f = bulkFiles[i];
-    document.getElementById('bulkStatus').textContent = 'Uploading ' + (i+1) + ' of ' + bulkFiles.length + '…';
+    if (f === null) continue; // skipped by user
+    document.getElementById('bulkStatus').textContent = 'Uploading ' + (ok+fail+1) + ' of ' + bulkFiles.filter(function(x){return x!==null;}).length + '…';
     setRowStatus(i, 'Uploading…', 'var(--muted)');
 
     var nextId;
