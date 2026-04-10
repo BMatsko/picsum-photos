@@ -34,6 +34,15 @@ func (a *API) imageHandler(w http.ResponseWriter, r *http.Request) *handler.Erro
 	vars := mux.Vars(r)
 	imageID := vars["id"]
 
+	// Resolve .raw to the stored file's actual extension
+	if p.Extension == ".raw" {
+		if a.RawResolver != nil {
+			p.Extension = a.RawResolver.StoredExtension(r.Context(), imageID)
+		} else {
+			p.Extension = ".jpg" // fallback if no resolver configured
+		}
+	}
+
 	// Build the cache key for request coalescing
 	cacheKey := buildCacheKey(imageID, p)
 

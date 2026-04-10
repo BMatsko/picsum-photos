@@ -26,6 +26,7 @@ import (
 	sftpStorage "github.com/DMarby/picsum-photos/internal/storage/sftp"
 	"github.com/DMarby/picsum-photos/internal/admin"
 	"github.com/DMarby/picsum-photos/internal/uploadapi"
+	"github.com/DMarby/picsum-photos/internal/storage/rawformat"
 	"github.com/DMarby/picsum-photos/internal/handler"
 	"github.com/DMarby/picsum-photos/internal/health"
 	"github.com/DMarby/picsum-photos/internal/logger"
@@ -182,6 +183,8 @@ func main() {
 
 	// ── Routers ───────────────────────────────────────────────────────────────
 	imgAPI := imageapi.NewAPI(imageProcessor, log, tracer, cmd.HandlerTimeout, h)
+	// Wire raw format resolver so .raw extension returns the stored format
+	imgAPI.RawResolver = &rawformat.FileResolver{BasePath: *storagePath}
 	imgAPIRouter := imgAPI.Router()
 
 	mainAPI := &api.API{

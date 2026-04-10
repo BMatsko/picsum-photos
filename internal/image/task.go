@@ -28,6 +28,9 @@ const (
 	AVIF
 	// GIF represents the GIF format (animated GIFs preserve all frames)
 	GIF
+	// Raw is a sentinel — resolved to the stored format at request time before processing
+	// It is never passed to the image processor directly
+	Raw
 )
 
 // NewTask creates a new image processing task

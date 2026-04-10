@@ -14,6 +14,7 @@ import (
 
 	"github.com/DMarby/picsum-photos/internal/image"
 	"github.com/DMarby/picsum-photos/internal/logger"
+	"github.com/DMarby/picsum-photos/internal/storage/rawformat"
 	"github.com/gorilla/mux"
 )
 
@@ -29,6 +30,7 @@ type API struct {
 	Tracer         *tracing.Tracer
 	HandlerTimeout time.Duration
 	HMAC           *hmac.HMAC
+	RawResolver    rawformat.Resolver // resolves stored file extension for .raw requests; may be nil
 	imageCache     *expirable.LRU[string, []byte] // caches processed images
 	inflight       sync.Map                       // map[string]chan struct{} - coalesces concurrent requests
 }
