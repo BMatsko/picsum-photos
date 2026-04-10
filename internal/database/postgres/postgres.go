@@ -20,16 +20,18 @@ type Provider struct {
 
 const schema = `
 CREATE TABLE IF NOT EXISTS images (
-	id      TEXT PRIMARY KEY,
-	author  TEXT NOT NULL DEFAULT '',
-	url     TEXT NOT NULL DEFAULT '',
-	width   INTEGER NOT NULL DEFAULT 0,
-	height  INTEGER NOT NULL DEFAULT 0,
-	tags    TEXT[] NOT NULL DEFAULT '{}'
+	id       TEXT PRIMARY KEY,
+	author   TEXT NOT NULL DEFAULT '',
+	url      TEXT NOT NULL DEFAULT '',
+	filename TEXT NOT NULL DEFAULT '',
+	width    INTEGER NOT NULL DEFAULT 0,
+	height   INTEGER NOT NULL DEFAULT 0,
+	tags     TEXT[] NOT NULL DEFAULT '{}'
 );
 
--- Add tags column to existing tables that predate it
-ALTER TABLE images ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
+-- Migrations for existing tables
+ALTER TABLE images ADD COLUMN IF NOT EXISTS tags     TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE images ADD COLUMN IF NOT EXISTS filename TEXT   NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS seed_resolutions (
 	seed       TEXT NOT NULL,
@@ -369,10 +371,10 @@ func (p *Provider) ListDistinctAuthors(ctx context.Context) ([]string, error) {
 	return authors, nil
 }
 
-// ListAllWithTags returns images including their tags (for admin use).
+// ListAllWithTags returns images including their tags and filename (for admin use).
 func (p *Provider) ListAllWithTags(ctx context.Context) ([]ImageWithTags, error) {
 	rows, err := p.pool.Query(ctx,
-		`SELECT id, author, url, width, height, tags FROM images ORDER BY id`)
+		`SELECT id, author, url, filename, width, height, tags FROM images ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +383,7 @@ func (p *Provider) ListAllWithTags(ctx context.Context) ([]ImageWithTags, error)
 	var images []ImageWithTags
 	for rows.Next() {
 		img := ImageWithTags{}
-		if err := rows.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height, &img.Tags); err != nil {
+		if err := rows.Scan(&img.ID, &img.Author, &img.URL, &img.Filename, &img.Width, &img.Height, &img.Tags); err != nil {
 			return nil, err
 		}
 		images = append(images, img)
@@ -389,10 +391,11 @@ func (p *Provider) ListAllWithTags(ctx context.Context) ([]ImageWithTags, error)
 	return images, nil
 }
 
-// ImageWithTags extends Image with the tags array.
+// ImageWithTags extends Image with tags and the original upload filename.
 type ImageWithTags struct {
 	database.Image
-	Tags []string
+	Tags     []string
+	Filename string
 }
 
 // NextID returns max(numeric id) + 1, or 1 if the table is empty.

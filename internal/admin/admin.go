@@ -294,8 +294,13 @@ func (a *Admin) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Use filename as source URL hint if not provided
-	if imgURL == "" && header != nil {
-		imgURL = header.Filename
+	// Store original filename separately from source URL
+	filename := ""
+	if header != nil {
+		filename = header.Filename
+	}
+	if imgURL == "" && filename != "" {
+		imgURL = filename
 	}
 
 	// Detect extension from magic bytes (more reliable than Content-Type)
@@ -316,9 +321,9 @@ func (a *Admin) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err = a.DB.Pool().Exec(r.Context(),
-		`INSERT INTO images (id, author, url, width, height, tags) VALUES ($1,$2,$3,$4,$5,$6)
-		 ON CONFLICT (id) DO UPDATE SET author=$2, url=$3, width=$4, height=$5, tags=$6`,
-		id, author, imgURL, width, height, tags,
+		`INSERT INTO images (id, author, url, filename, width, height, tags) VALUES ($1,$2,$3,$4,$5,$6,$7)
+		 ON CONFLICT (id) DO UPDATE SET author=$2, url=$3, filename=$4, width=$5, height=$6, tags=$7`,
+		id, author, imgURL, filename, width, height, tags,
 	)
 	if err != nil {
 		if a.SFTP != nil {

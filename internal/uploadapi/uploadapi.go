@@ -167,7 +167,7 @@ func (a *API) handleUploadFromFile(w http.ResponseWriter, r *http.Request) {
 
 	fileExt := imageformat.DetectExtension(data)
 
-	a.finishUpload(w, r, id, author, imgURL, fileExt, parseTags(r.FormValue("tags")), data)
+	a.finishUpload(w, r, id, author, imgURL, header.Filename, fileExt, parseTags(r.FormValue("tags")), data)
 }
 
 // ── Mode 2: URL fetch ─────────────────────────────────────────────────────
@@ -258,12 +258,16 @@ func (a *API) fetchAndStore(w http.ResponseWriter, r *http.Request, photoURL, au
 		id = fmt.Sprintf("%d", nextID)
 	}
 
-	a.finishUpload(w, r, id, author, srcURL, fileExt, parseTags(tagsRaw), data)
+	// Extract filename from the remote URL path
+	fetchedFilename := photoURL
+	if li := strings.LastIndex(photoURL, "/"); li >= 0 { fetchedFilename = photoURL[li+1:] }
+	if qi := strings.Index(fetchedFilename, "?"); qi >= 0 { fetchedFilename = fetchedFilename[:qi] }
+	a.finishUpload(w, r, id, author, srcURL, fetchedFilename, fileExt, parseTags(tagsRaw), data)
 }
 
 // ── Shared save + DB logic ────────────────────────────────────────────────
 
-func (a *API) finishUpload(w http.ResponseWriter, r *http.Request, id, author, imgURL, fileExt string, tags []string, data []byte) {
+func (a *API) finishUpload(w http.ResponseWriter, r *http.Request, id, author, imgURL, filename, fileExt string, tags []string, data []byte) {
 	// Detect dimensions
 	var width, height int
 	if cfg, _, err := image.DecodeConfig(bytes.NewReader(data)); err == nil {
@@ -286,9 +290,9 @@ func (a *API) finishUpload(w http.ResponseWriter, r *http.Request, id, author, i
 
 	// Insert into DB
 	_, dbErr := a.DB.Pool().Exec(r.Context(),
-		`INSERT INTO images (id, author, url, width, height, tags) VALUES ($1,$2,$3,$4,$5,$6)
-		 ON CONFLICT (id) DO UPDATE SET author=$2, url=$3, width=$4, height=$5, tags=$6`,
-		id, author, imgURL, width, height, tags,
+		`INSERT INTO images (id, author, url, filename, width, height, tags) VALUES ($1,$2,$3,$4,$5,$6,$7)
+		 ON CONFLICT (id) DO UPDATE SET author=$2, url=$3, filename=$4, width=$5, height=$6, tags=$7`,
+		id, author, imgURL, filename, width, height, tags,
 	)
 	if dbErr != nil {
 		if a.SFTP != nil {

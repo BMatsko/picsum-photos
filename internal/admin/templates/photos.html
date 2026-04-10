@@ -146,13 +146,14 @@
     <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="clearPhotoFilters()">Clear filters</button>
   </div>
   <div class="table-wrap"><table id="photoTable">
-    <thead><tr><th>Preview</th><th>ID</th><th>Author</th><th>Dimensions</th><th>Tags</th><th></th></tr></thead>
+    <thead><tr><th>Preview</th><th>ID</th><th>Author</th><th>Filename</th><th>Dimensions</th><th>Tags</th><th></th></tr></thead>
     <tbody>
     {{range .Images}}
-    <tr data-id="{{.ID}}" data-author="{{.Author}}" data-tags="{{join .Tags ","}}">
+    <tr data-id="{{.ID}}" data-author="{{.Author}}" data-tags="{{join .Tags ","}}" data-filename="{{.Filename}}">
       <td><img class="thumb" src="{{$.RootURL}}/id/{{.ID}}/112/76" alt="" loading="lazy" onerror="this.style.opacity=0.2"></td>
       <td><code>{{.ID}}</code></td>
       <td>{{.Author}}</td>
+      <td style="color:var(--muted);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{.Filename}}">{{if .Filename}}{{.Filename}}{{else}}<span style="color:var(--border);">—</span>{{end}}</td>
       <td style="color:var(--muted);font-size:12px;white-space:nowrap;">{{.Width}} × {{.Height}}</td>
       <td>
         <form method="POST" action="/admin/photos/{{.ID}}/tags" style="display:flex;gap:6px;align-items:center;" class="row-tag-form" data-id="{{.ID}}" data-tags="{{join .Tags ","}}">
@@ -181,14 +182,16 @@
 <script>
 // ── Photo library filter ──────────────────────────────────────────────
 function filterPhotos() {
-  var fId = (document.getElementById('filterPhotoId').value || '').toLowerCase();
+  var fId     = (document.getElementById('filterPhotoId').value     || '').toLowerCase();
   var fAuthor = (document.getElementById('filterPhotoAuthor').value || '').toLowerCase();
-  var fTag = (document.getElementById('filterPhotoTag').value || '').toLowerCase();
+  var fFile   = (document.getElementById('filterPhotoFile').value   || '').toLowerCase();
+  var fTag    = (document.getElementById('filterPhotoTag').value    || '').toLowerCase();
   var rows = document.querySelectorAll('#photoTable tbody tr[data-id]');
   var visible = 0;
   rows.forEach(function(row) {
     var show = row.dataset.id.toLowerCase().includes(fId)
       && row.dataset.author.toLowerCase().includes(fAuthor)
+      && (row.dataset.filename || '').toLowerCase().includes(fFile)
       && row.dataset.tags.toLowerCase().includes(fTag);
     row.style.display = show ? '' : 'none';
     if (show) visible++;
@@ -198,7 +201,7 @@ function filterPhotos() {
   if (nr) nr.style.display = visible ? 'none' : 'block';
 }
 function clearPhotoFilters() {
-  ['filterPhotoId','filterPhotoAuthor','filterPhotoTag'].forEach(function(id){
+  ['filterPhotoId','filterPhotoAuthor','filterPhotoFile','filterPhotoTag'].forEach(function(id){
     var el = document.getElementById(id); if(el) el.value='';
   });
   filterPhotos();
@@ -663,6 +666,13 @@ document.getElementById('bulkStart').addEventListener('click', async function() 
   } else {
     btn.disabled = false;
     document.getElementById('bulkFiles').disabled = false;
+    document.getElementById('bulkAuthor').disabled = false;
+  }
+});
+</script>
+</main></body></html>
+{{end}}
+cument.getElementById('bulkFiles').disabled = false;
     document.getElementById('bulkAuthor').disabled = false;
   }
 });
