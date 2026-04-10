@@ -136,6 +136,39 @@ func SaveToJpegBuffer(image Image) ([]byte, error) {
 	return buffer, nil
 }
 
+// SaveToGifBuffer saves an image (all frames) as GIF to a buffer.
+func SaveToGifBuffer(image Image) ([]byte, error) {
+	defer UnrefImage(image)
+
+	var bufferPointer unsafe.Pointer
+	bufferLength := C.size_t(0)
+
+	errCode := C.save_image_to_gif_buffer(image, &bufferPointer, &bufferLength)
+	if errCode != 0 {
+		return nil, fmt.Errorf("error saving to gif buffer %s", catchVipsError())
+	}
+	buffer := C.GoBytes(bufferPointer, C.int(bufferLength))
+	C.g_free(C.gpointer(bufferPointer))
+	return buffer, nil
+}
+
+// ResizeAnimated resizes an animated image (GIF/WebP) preserving all frames.
+func ResizeAnimated(imageBuffer []byte, width, height int) (Image, error) {
+	var image Image
+	errCode := C.resize_animated(
+		unsafe.Pointer(&imageBuffer[0]),
+		C.size_t(len(imageBuffer)),
+		&image,
+		C.int(width),
+		C.int(height),
+		C.VIPS_INTERESTING_CENTRE,
+	)
+	if errCode != 0 {
+		return nil, fmt.Errorf("error resizing animated image %s", catchVipsError())
+	}
+	return image, nil
+}
+
 // SaveToTiffBuffer saves an image as TIFF to a buffer
 func SaveToTiffBuffer(image Image) ([]byte, error) {
 	defer UnrefImage(image)

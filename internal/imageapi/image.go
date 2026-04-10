@@ -133,6 +133,8 @@ func getOutputFormat(extension string) image.OutputFormat {
 		return image.TIFF
 	case ".avif":
 		return image.AVIF
+	case ".gif":
+		return image.GIF
 	default:
 		return image.JPEG
 	}
@@ -148,6 +150,8 @@ func getContentType(extension string) string {
 		return "image/tiff"
 	case ".avif":
 		return "image/avif"
+	case ".gif":
+		return "image/gif"
 	default:
 		return "image/jpeg"
 	}

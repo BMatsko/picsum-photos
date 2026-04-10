@@ -54,6 +54,50 @@ int resize_image(void *buf, size_t len, VipsImage **out, int width, int height, 
   return vips_thumbnail_buffer(buf, len, out, width, "height", height, "crop", interesting, NULL);
 }
 
+// resize_animated loads ALL frames (n=-1) then thumbnails, preserving animation.
+// Used for GIF (and animated WebP) to keep all frames intact.
+int resize_animated(void *buf, size_t len, VipsImage **out, int width, int height, VipsInteresting interesting) {
+  VipsImage *loaded = NULL;
+  // Load all pages/frames
+  if (vips_gifload_buffer(buf, len, &loaded, "n", -1, NULL) != 0) {
+    // Fall back to generic loader
+    if (vips_image_new_from_buffer(buf, len, "", "n", -1, NULL) != 0) {
+      return -1;
+    }
+  }
+  if (loaded == NULL) return -1;
+
+  // Get page height to calculate per-frame dimensions
+  int n_pages = vips_image_get_n_pages(loaded);
+  int frame_height = loaded->Ysize / (n_pages > 0 ? n_pages : 1);
+
+  // Scale factor based on width
+  double scale = (double)width / loaded->Xsize;
+  int new_frame_h = (int)(frame_height * scale);
+  if (new_frame_h > height) {
+    scale = (double)height / frame_height;
+  }
+
+  VipsImage *resized = NULL;
+  int ret = vips_thumbnail_image(loaded, &resized, width,
+    "height", n_pages * (int)(frame_height * (scale = (double)width / loaded->Xsize)),
+    "crop", interesting,
+    "option_string", "n=-1",
+    NULL);
+  g_object_unref(loaded);
+  if (ret != 0) return -1;
+  *out = resized;
+  return 0;
+}
+
+int save_image_to_gif_buffer(VipsImage *image, void **buf, size_t *len) {
+  if (image == NULL) {
+    vips_error("gifsave_buffer", "no image data\n");
+    return -1;
+  }
+  return vips_gifsave_buffer(image, buf, len, NULL);
+}
+
 int change_colorspace(VipsImage *in, VipsImage **out, VipsInterpretation colorspace) {
   // Guard against empty/partial images without data (segfaults in libvips 8.18+)
   if (in == NULL || (in->dtype == VIPS_IMAGE_PARTIAL && in->generate_fn == NULL)) {

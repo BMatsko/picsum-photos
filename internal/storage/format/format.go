@@ -71,6 +71,8 @@ func ExtFromMIME(mime string) string {
 		return ".avif"
 	case "image/tiff":
 		return ".tiff"
+	case "image/gif":
+		return ".gif"
 	default:
 		return ""
 	}

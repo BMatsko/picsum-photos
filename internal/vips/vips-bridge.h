@@ -19,6 +19,8 @@ int save_image_to_png_buffer(VipsImage *image, void **buf, size_t *len);
 int save_image_to_tiff_buffer(VipsImage *image, void **buf, size_t *len);
 int save_image_to_avif_buffer(VipsImage *image, void **buf, size_t *len);
 int resize_image(void *buf, size_t len, VipsImage **out, int width, int height, VipsInteresting interesting);
+int resize_animated(void *buf, size_t len, VipsImage **out, int width, int height, VipsInteresting interesting);
+int save_image_to_gif_buffer(VipsImage *image, void **buf, size_t *len);
 int change_colorspace(VipsImage *in, VipsImage **out, VipsInterpretation colorspace);
 int blur_image(VipsImage *in, VipsImage **out, double blur);
 void set_user_comment(VipsImage *image, char const* comment);

@@ -90,11 +90,24 @@ func taskProcessor(cache *image.Cache, tracer *tracing.Tracer) func(ctx context.
 			return nil, fmt.Errorf("error getting image from cache: %s", err)
 		}
 
-		_, span := tracer.Start(ctx, "image.resizeImage")
-		processedImage, err := resizeImage(imageBuffer, task.Width, task.Height)
-		span.End()
-		if err != nil {
-			return nil, err
+		// GIF uses animated-aware resize to preserve all frames
+		var processedImage *resizedImage
+		if task.OutputFormat == image.GIF {
+			_, span := tracer.Start(ctx, "image.resizeAnimated")
+			var vipsImg vips.Image
+			vipsImg, err = vips.ResizeAnimated(imageBuffer, task.Width, task.Height)
+			span.End()
+			if err != nil {
+				return nil, err
+			}
+			processedImage = &resizedImage{vipsImage: vipsImg}
+		} else {
+			_, span := tracer.Start(ctx, "image.resizeImage")
+			processedImage, err = resizeImage(imageBuffer, task.Width, task.Height)
+			span.End()
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		if task.ApplyBlur {
@@ -138,6 +151,10 @@ func taskProcessor(cache *image.Cache, tracer *tracing.Tracer) func(ctx context.
 		case image.AVIF:
 			_, span := tracer.Start(ctx, "image.saveToAvifBuffer")
 			buffer, err = processedImage.saveToAvifBuffer()
+			span.End()
+		case image.GIF:
+			_, span := tracer.Start(ctx, "image.saveToGifBuffer")
+			buffer, err = processedImage.saveToGifBuffer()
 			span.End()
 		}
 

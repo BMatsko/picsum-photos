@@ -26,8 +26,8 @@ const (
 	TIFF
 	// AVIF represents the AVIF format
 	AVIF
-	// TODO: GIF - requires full animated GIF pipeline (import + export both gif)
-	// GIF
+	// GIF represents the GIF format (animated GIFs preserve all frames)
+	GIF
 )
 
 // NewTask creates a new image processing task
