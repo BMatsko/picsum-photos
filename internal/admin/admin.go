@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"os"
 	"path/filepath"
 	"strings"
@@ -143,9 +144,71 @@ func (a *Admin) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Admin) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	images, _ := a.DB.ListAll(r.Context())
+	images, _ := a.DB.ListAllWithTags(r.Context())
+
+	// Aggregations
+	authorCounts := map[string]int{}
+	tagCounts := map[string]int{}
+	untagged := 0
+	totalW, totalH := int64(0), int64(0)
+
+	for _, img := range images {
+		if img.Author != "" {
+			authorCounts[img.Author]++
+		}
+		if len(img.Tags) == 0 {
+			untagged++
+		} else {
+			for _, t := range img.Tags {
+				tagCounts[t]++
+			}
+		}
+		totalW += int64(img.Width)
+		totalH += int64(img.Height)
+	}
+
+	// Sort authors by count descending (top 10)
+	type kv struct{ K string; V int }
+	var authorSlice []kv
+	for k, v := range authorCounts {
+		authorSlice = append(authorSlice, kv{k, v})
+	}
+	sort.Slice(authorSlice, func(i, j int) bool { return authorSlice[i].V > authorSlice[j].V })
+	if len(authorSlice) > 10 {
+		authorSlice = authorSlice[:10]
+	}
+
+	// Sort tags by count descending (top 10)
+	var tagSlice []kv
+	for k, v := range tagCounts {
+		tagSlice = append(tagSlice, kv{k, v})
+	}
+	sort.Slice(tagSlice, func(i, j int) bool { return tagSlice[i].V > tagSlice[j].V })
+	if len(tagSlice) > 10 {
+		tagSlice = tagSlice[:10]
+	}
+
+	// Seed stats
+	var seedTotal, seedTagged int
+	a.DB.Pool().QueryRow(r.Context(), `SELECT COUNT(*) FROM seed_resolutions`).Scan(&seedTotal)
+	a.DB.Pool().QueryRow(r.Context(), `SELECT COUNT(*) FROM seed_resolutions WHERE tag != ''`).Scan(&seedTagged)
+
+	// Average dimensions
+	avgW, avgH := 0, 0
+	if len(images) > 0 {
+		avgW = int(totalW / int64(len(images)))
+		avgH = int(totalH / int64(len(images)))
+	}
+
 	a.render(w, "dashboard.html", map[string]any{
-		"Page": "dashboard", "PhotoCount": len(images), "RootURL": a.RootURL,
+		"Page": "dashboard", "RootURL": a.RootURL,
+		"PhotoCount": len(images),
+		"Untagged":   untagged,
+		"SeedTotal":  seedTotal,
+		"SeedTagged": seedTagged,
+		"AvgW": avgW, "AvgH": avgH,
+		"AuthorStats": authorSlice,
+		"TagStats":    tagSlice,
 	})
 }
 

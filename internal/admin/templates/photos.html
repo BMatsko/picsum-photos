@@ -397,12 +397,88 @@ document.getElementById('photoFile').addEventListener('change', async function(e
 var bulkFiles = [];
 var bulkDupes = [];
 
-function checkDuplicate(file, dim, existingImages) {
+// ── Perceptual hashing (aHash 16×16) ─────────────────────────────────────
+var _hashCanvas = document.createElement('canvas');
+_hashCanvas.width = _hashCanvas.height = 16;
+var _hashCtx = _hashCanvas.getContext('2d', {willReadFrequently: true});
+
+// Compute a 256-bit average hash from an image element or data URL
+function computeAHash(src) {
+  return new Promise(function(resolve) {
+    function hash(imgEl) {
+      _hashCtx.drawImage(imgEl, 0, 0, 16, 16);
+      var pixels = _hashCtx.getImageData(0, 0, 16, 16).data;
+      // Convert to grayscale
+      var gray = new Array(256);
+      var sum = 0;
+      for (var i = 0; i < 256; i++) {
+        var p = i * 4;
+        gray[i] = pixels[p] * 0.299 + pixels[p+1] * 0.587 + pixels[p+2] * 0.114;
+        sum += gray[i];
+      }
+      var mean = sum / 256;
+      // Build bit array (1 if above mean)
+      var bits = new Uint8Array(256);
+      for (var j = 0; j < 256; j++) bits[j] = gray[j] >= mean ? 1 : 0;
+      resolve(bits);
+    }
+    if (typeof src === 'string') {
+      var img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = function() { hash(img); };
+      img.onerror = function() { resolve(null); };
+      img.src = src;
+    } else {
+      hash(src);
+    }
+  });
+}
+
+// Hamming similarity: 0.0 (totally different) to 1.0 (identical)
+function hammingSimilarity(h1, h2) {
+  if (!h1 || !h2) return 0;
+  var same = 0;
+  for (var i = 0; i < 256; i++) if (h1[i] === h2[i]) same++;
+  return same / 256;
+}
+
+// Returns a candidate match {match, id, author, similarity} only if visual similarity >= threshold
+// Falls back to metadata-only match with similarity=null if the image can’t be loaded
+async function checkDuplicate(file, dim, fileDataURL, existingImages, rootURL) {
   var nameLower = file.name.toLowerCase();
+  var THRESHOLD = 0.90;
+
+  // Compute hash of the incoming file
+  var fileHash = null;
+  if (fileDataURL) {
+    var img = new Image();
+    img.src = fileDataURL;
+    await new Promise(function(r){ img.onload=r; img.onerror=r; });
+    fileHash = await computeAHash(img);
+  }
+
   for (var j = 0; j < existingImages.length; j++) {
-    var img = existingImages[j];
-    if (img.url && img.url.toLowerCase() === nameLower) return {match:'filename',id:img.id,author:img.author};
-    if (dim.w && img.width === dim.w && img.height === dim.h) return {match:'dimensions',id:img.id,author:img.author};
+    var ex = existingImages[j];
+    var isCandidate = (ex.url && ex.url.toLowerCase() === nameLower) ||
+                     (dim.w && ex.width === dim.w && ex.height === dim.h);
+    if (!isCandidate) continue;
+
+    var matchType = (ex.url && ex.url.toLowerCase() === nameLower) ? 'filename' : 'dimensions';
+
+    // Load existing image thumbnail and compare hashes
+    if (fileHash) {
+      var thumbURL = rootURL + '/id/' + ex.id + '/64/64';
+      var existingHash = await computeAHash(thumbURL);
+      var sim = hammingSimilarity(fileHash, existingHash);
+      if (sim >= THRESHOLD) {
+        return {match: matchType, id: ex.id, author: ex.author, similarity: Math.round(sim * 100)};
+      }
+      // Visual check failed — not flagged
+      continue;
+    }
+
+    // Couldn’t compute hashes (e.g. non-image file) — fall back to metadata match
+    return {match: matchType, id: ex.id, author: ex.author, similarity: null};
   }
   return null;
 }
@@ -427,11 +503,21 @@ document.getElementById('bulkFiles').addEventListener('change', async function(e
   var existingImages = [];
   try { var res = await fetch('/admin/api/images'); existingImages = await res.json(); } catch(e) {}
 
+  var rootURL = '{{.RootURL}}';
+
   var dupeCount = 0;
   for (var i = 0; i < bulkFiles.length; i++) {
     var f = bulkFiles[i];
     var dim = await readImageDimensions(f);
-    var dupe = checkDuplicate(f, dim, existingImages);
+    // Get data URL for perceptual hash comparison
+    var fileDataURL = await new Promise(function(resolve) {
+      var r = new FileReader();
+      r.onload = function(e){ resolve(e.target.result); };
+      r.onerror = function(){ resolve(null); };
+      r.readAsDataURL(f);
+    });
+    document.getElementById('bulkStatus').textContent = 'Checking ' + (i+1) + ' of ' + bulkFiles.length + '…';
+    var dupe = await checkDuplicate(f, dim, fileDataURL, existingImages, rootURL);
     bulkDupes[i] = dupe;
     if (dupe) dupeCount++;
 
@@ -449,6 +535,7 @@ document.getElementById('bulkFiles').addEventListener('change', async function(e
           '<div style="display:flex;align-items:center;gap:8px;">' +
             '<span style="font-size:11px;font-weight:700;background:rgba(253,0,68,.1);color:#fd0044;border-radius:4px;padding:2px 7px;">Possible duplicate</span>' +
             '<span style="font-size:12px;color:var(--muted);">'+matchLabel+'</span>' +
+            (dupe.similarity !== null ? '<span style="font-size:11px;font-weight:700;background:rgba(253,0,68,.08);color:#fd0044;border-radius:4px;padding:2px 7px;">'+dupe.similarity+'% visual match</span>' : '') +
           '</div>' +
           '<div style="display:flex;align-items:center;gap:8px;">' +
             '<span id="bulk-status-'+i+'" style="font-size:12px;font-weight:600;color:#fd0044;">Flagged</span>' +
