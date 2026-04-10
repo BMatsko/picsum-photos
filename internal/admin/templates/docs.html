@@ -1,82 +1,201 @@
 {{define "docs.html"}}<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><title>Docs — Brayden's Pic</title>{{template "style" .}}</head>
 <body>{{template "nav" (map "Page" "docs")}}
+{{template "topbar" (map "Page" "docs")}}
 <main>
 <h1>API Reference</h1>
 <p class="sub">Base URL: <a class="link" href="{{.RootURL}}">{{.RootURL}}</a></p>
 
+{{/* ── Image endpoints ──────────────────────────────────────── */}}
 <div class="card">
   <h2>Random image</h2>
-  <pre>GET /[width]/[height]</pre>
-  <p style="color:var(--muted);font-size:13px;margin-top:10px;">Returns a different random image on every request. Not cacheable.</p>
-  <div class="table-wrap"><table style="margin-top:14px;">
-    <thead><tr><th>Example</th><th>Result</th></tr></thead>
+  <pre>GET /[width]/[height][.ext]</pre>
+  <p style="color:var(--muted);font-size:13px;margin-top:8px;margin-bottom:14px;">Returns a different random image on every request. Not cacheable.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>{{.RootURL}}/200/300</code></td><td style="color:var(--muted);font-size:12px;">200×300 random image</td></tr>
-      <tr><td><code>{{.RootURL}}/400/400</code></td><td style="color:var(--muted);font-size:12px;">400×400 square random image</td></tr>
+      <tr><td><code>width</code></td><td style="color:var(--muted);font-size:12px;">integer</td><td style="color:var(--muted);font-size:12px;">Output width in pixels</td></tr>
+      <tr><td><code>height</code></td><td style="color:var(--muted);font-size:12px;">integer</td><td style="color:var(--muted);font-size:12px;">Output height in pixels</td></tr>
+      <tr><td><code>?grayscale</code></td><td style="color:var(--muted);font-size:12px;">flag</td><td style="color:var(--muted);font-size:12px;">Convert to grayscale</td></tr>
+      <tr><td><code>?blur[=1–10]</code></td><td style="color:var(--muted);font-size:12px;">integer (optional)</td><td style="color:var(--muted);font-size:12px;">Gaussian blur; default intensity 5</td></tr>
+      <tr><td><code>?author=name</code></td><td style="color:var(--muted);font-size:12px;">string</td><td style="color:var(--muted);font-size:12px;">Filter to photos by a specific author</td></tr>
     </tbody>
   </table></div>
+  <p style="font-size:12px;color:var(--muted);margin-top:14px;"><strong style="color:var(--text);">Examples:</strong></p>
+  <pre style="margin-top:6px;">{{.RootURL}}/400/300
+{{.RootURL}}/400/300.webp
+{{.RootURL}}/400/300?grayscale
+{{.RootURL}}/400/300?blur=3&grayscale
+{{.RootURL}}/400/300?author=Jane</pre>
 </div>
 
 <div class="card">
   <h2>Seeded image</h2>
-  <pre>GET /seed/[seed]/[width]/[height]</pre>
-  <p style="color:var(--muted);font-size:13px;margin-top:10px;">The same seed always returns the same photo. Seed can be any string. Cached for 1 day.</p>
-  <div class="table-wrap"><table style="margin-top:14px;">
-    <thead><tr><th>Example</th><th>Result</th></tr></thead>
+  <pre>GET /seed/[seed]/[width]/[height][.ext]</pre>
+  <p style="color:var(--muted);font-size:13px;margin-top:8px;margin-bottom:14px;">Each <strong style="color:var(--text);">(seed, tag)</strong> combination resolves to a specific photo and remembers it permanently. Passing a different tag creates an independent slot for that seed. Cached for 1 day.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>{{.RootURL}}/seed/hello/400/300</code></td><td style="color:var(--muted);font-size:12px;">Always the same photo for "hello"</td></tr>
-      <tr><td><code>{{.RootURL}}/seed/user-123/200/200</code></td><td style="color:var(--muted);font-size:12px;">Per-user stable avatar</td></tr>
+      <tr><td><code>seed</code></td><td style="color:var(--muted);font-size:12px;">string</td><td style="color:var(--muted);font-size:12px;">Any string — use an ID, slug, or UUID</td></tr>
+      <tr><td><code>?tag=name</code></td><td style="color:var(--muted);font-size:12px;">string</td><td style="color:var(--muted);font-size:12px;">Filter initial resolution to photos with this tag. Omit or leave blank = any photo. Once resolved, the image is locked for that (seed, tag) pair.</td></tr>
+      <tr><td><code>?grayscale</code></td><td style="color:var(--muted);font-size:12px;">flag</td><td style="color:var(--muted);font-size:12px;">Convert output to grayscale</td></tr>
+      <tr><td><code>?blur[=1–10]</code></td><td style="color:var(--muted);font-size:12px;">integer</td><td style="color:var(--muted);font-size:12px;">Blur the output</td></tr>
     </tbody>
   </table></div>
+  <p style="font-size:12px;color:var(--muted);margin-top:14px;"><strong style="color:var(--text);">Examples:</strong></p>
+  <pre style="margin-top:6px;">{{.RootURL}}/seed/hello/400/300
+{{.RootURL}}/seed/user-123/200/200?tag=portrait
+{{.RootURL}}/seed/banner-home/1500/600?tag=landscape
+{{.RootURL}}/seed/banner-home/1500/600?tag=landscape   ← always returns the same photo
+{{.RootURL}}/seed/banner-home/1500/600?tag=urban       ← independent slot, different photo</pre>
+  <div style="margin-top:14px;padding:12px 14px;background:rgba(89,84,249,.05);border:1px solid rgba(89,84,249,.15);border-radius:8px;font-size:12px;color:var(--muted);">
+    <strong style="color:var(--blue);">Tag fallback:</strong> If the requested tag has no matching photos, the system falls back to any photo from the full library and stores the result as untagged.
+  </div>
 </div>
 
 <div class="card">
   <h2>Image by ID</h2>
-  <pre>GET /id/[id]/[width]/[height]</pre>
-  <p style="color:var(--muted);font-size:13px;margin-top:10px;">Fetch a specific photo by ID. Cached for 1 day.</p>
-  <div class="table-wrap"><table style="margin-top:14px;">
-    <thead><tr><th>Example</th></tr></thead>
-    <tbody>
-      <tr><td><code>{{.RootURL}}/id/1/400/300</code></td></tr>
-    </tbody>
-  </table></div>
+  <pre>GET /id/[id]/[width]/[height][.ext]</pre>
+  <p style="color:var(--muted);font-size:13px;margin-top:8px;margin-bottom:14px;">Fetch a specific photo by its numeric ID. Cached for 1 day.</p>
+  <pre>{{.RootURL}}/id/1/400/300
+{{.RootURL}}/id/1/400/300.avif
+{{.RootURL}}/id/1/400/300?grayscale</pre>
 </div>
 
+{{/* ── Output formats ───────────────────────────────────────── */}}
 <div class="card">
-  <h2>Query parameters</h2>
+  <h2>Output formats</h2>
+  <p style="color:var(--muted);font-size:13px;margin-top:0;margin-bottom:14px;">Append an extension to any image URL to request a specific format. Default is JPEG.</p>
   <div class="table-wrap"><table>
-    <thead><tr><th>Parameter</th><th>Example</th><th>Effect</th></tr></thead>
+    <thead><tr><th>Extension</th><th>MIME type</th><th>Notes</th></tr></thead>
     <tbody>
-      <tr><td><code>?grayscale</code></td><td><code>/200/300?grayscale</code></td><td style="color:var(--muted);font-size:12px;">Convert to grayscale</td></tr>
-      <tr><td><code>?blur</code></td><td><code>/200/300?blur</code></td><td style="color:var(--muted);font-size:12px;">Blur with default amount (5)</td></tr>
-      <tr><td><code>?blur=1–10</code></td><td><code>/200/300?blur=2</code></td><td style="color:var(--muted);font-size:12px;">Blur with custom intensity</td></tr>
+      <tr><td><code>.jpg</code> <span style="color:var(--muted);font-size:11px;">(default)</span></td><td style="color:var(--muted);font-size:12px;">image/jpeg</td><td style="color:var(--muted);font-size:12px;">Progressive, optimised</td></tr>
+      <tr><td><code>.png</code></td><td style="color:var(--muted);font-size:12px;">image/png</td><td style="color:var(--muted);font-size:12px;">Lossless</td></tr>
+      <tr><td><code>.webp</code></td><td style="color:var(--muted);font-size:12px;">image/webp</td><td style="color:var(--muted);font-size:12px;">Modern lossy/lossless</td></tr>
+      <tr><td><code>.avif</code></td><td style="color:var(--muted);font-size:12px;">image/avif</td><td style="color:var(--muted);font-size:12px;">AV1-based, best compression</td></tr>
+      <tr><td><code>.gif</code></td><td style="color:var(--muted);font-size:12px;">image/gif</td><td style="color:var(--muted);font-size:12px;">Animated GIFs preserve all frames</td></tr>
+      <tr><td><code>.tiff</code></td><td style="color:var(--muted);font-size:12px;">image/tiff</td><td style="color:var(--muted);font-size:12px;">High-quality, lossless</td></tr>
     </tbody>
   </table></div>
+  <pre style="margin-top:14px;">{{.RootURL}}/seed/hello/400/300.avif
+{{.RootURL}}/id/2/800/600.webp</pre>
 </div>
 
+{{/* ── List & info ──────────────────────────────────────────── */}}
 <div class="card">
-  <h2>Formats</h2>
-  <div class="table-wrap"><table>
-    <thead><tr><th>Extension</th><th>Example</th></tr></thead>
-    <tbody>
-      <tr><td><code>.jpg</code> (default)</td><td><code>{{.RootURL}}/200/300.jpg</code></td></tr>
-      <tr><td><code>.webp</code></td><td><code>{{.RootURL}}/200/300.webp</code></td></tr>
-    </tbody>
-  </table></div>
-</div>
-
-<div class="card">
-  <h2>List & info endpoints</h2>
+  <h2>List & info</h2>
   <div class="table-wrap"><table>
     <thead><tr><th>Endpoint</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>GET /v2/list</code></td><td style="color:var(--muted);font-size:12px;">All photos as JSON. Add <code>?page=2&amp;limit=10</code> to paginate.</td></tr>
-      <tr><td><code>GET /id/[id]/info</code></td><td style="color:var(--muted);font-size:12px;">Metadata JSON for a specific photo.</td></tr>
-      <tr><td><code>GET /seed/[seed]/info</code></td><td style="color:var(--muted);font-size:12px;">Metadata JSON for a seeded photo.</td></tr>
-      <tr><td><code>GET /health</code></td><td style="color:var(--muted);font-size:12px;">Health check JSON (used by Railway).</td></tr>
+      <tr>
+        <td><code>GET /v2/list</code></td>
+        <td style="color:var(--muted);font-size:12px;">All photos as JSON. Supports <code>?page=N&limit=N</code> and <code>?author=name</code>.</td>
+      </tr>
+      <tr>
+        <td><code>GET /id/[id]/info</code></td>
+        <td style="color:var(--muted);font-size:12px;">Metadata JSON for a specific photo (id, author, width, height, url).</td>
+      </tr>
+      <tr>
+        <td><code>GET /seed/[seed]/info</code></td>
+        <td style="color:var(--muted);font-size:12px;">Metadata JSON for the photo a seed resolves to.</td>
+      </tr>
+      <tr>
+        <td><code>GET /health</code></td>
+        <td style="color:var(--muted);font-size:12px;">Health check JSON — <code>{"healthy":true,"cache":"healthy","database":"healthy","storage":"healthy"}</code></td>
+      </tr>
     </tbody>
   </table></div>
+  <pre style="margin-top:14px;">GET {{.RootURL}}/v2/list?page=1&limit=20
+GET {{.RootURL}}/v2/list?author=Jane
+GET {{.RootURL}}/id/1/info
+GET {{.RootURL}}/seed/banner-home/info</pre>
 </div>
+
+{{/* ── Upload API ───────────────────────────────────────────── */}}
+<div class="card">
+  <h2>Upload API</h2>
+  <p style="color:var(--muted);font-size:13px;margin-top:0;margin-bottom:14px;">All upload endpoints require a valid API key. Manage keys at <a class="link" href="/admin/apikeys">API Keys</a>.</p>
+
+  <div style="margin-bottom:20px;">
+    <div style="font-family:var(--font-heading);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;">Authentication</div>
+    <pre>Authorization: Bearer pk_&lt;your-key&gt;
+# or
+?key=pk_&lt;your-key&gt;   (URL param, not recommended for uploads)</pre>
+  </div>
+
+  <div style="margin-bottom:20px;">
+    <div style="font-family:var(--font-heading);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;">Upload — file attachment</div>
+    <pre>POST /api/v1/upload
+Content-Type: multipart/form-data
+
+Fields:
+  photo      file     required — JPEG, PNG, WebP, HEIC, HEIF, AVIF, TIFF, GIF
+  author     string   required
+  tags       string   optional — comma-separated, e.g. "nature, portrait"
+  id         string   optional — auto-incremented if omitted
+  url        string   optional — source label (defaults to filename)</pre>
+    <pre style="margin-top:8px;">curl -X POST {{.RootURL}}/api/v1/upload \
+  -H "Authorization: Bearer pk_&lt;key&gt;" \
+  -F "photo=@/path/to/image.jpg" \
+  -F "author=Jane Doe" \
+  -F "tags=nature,portrait"</pre>
+  </div>
+
+  <div style="margin-bottom:20px;">
+    <div style="font-family:var(--font-heading);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;">Upload — remote URL</div>
+    <pre>POST /api/v1/upload
+Content-Type: application/json
+
+{
+  "photo_url": "https://example.com/photo.jpg",
+  "author":    "Jane Doe",
+  "tags":      "nature,portrait",
+  "id":        "42"             // optional
+}</pre>
+    <pre style="margin-top:8px;"># Also works as multipart with photo_url field instead of photo file
+curl -X POST {{.RootURL}}/api/v1/upload \
+  -H "Authorization: Bearer pk_&lt;key&gt;" \
+  -F "photo_url=https://example.com/photo.jpg" \
+  -F "author=Jane Doe"</pre>
+  </div>
+
+  <div>
+    <div style="font-family:var(--font-heading);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;">Response — 201 Created</div>
+    <pre>{
+  "id":     "42",
+  "author": "Jane Doe",
+  "url":    "photo.jpg",
+  "width":  4032,
+  "height": 3024,
+  "tags":   ["nature","portrait"]
+}</pre>
+  </div>
+
+  <div style="margin-top:20px;">
+    <div style="font-family:var(--font-heading);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;">List all images (authenticated)</div>
+    <pre>GET /api/v1/images
+Authorization: Bearer pk_&lt;your-key&gt;</pre>
+    <p style="color:var(--muted);font-size:12px;margin-top:6px;">Returns the full image list including tags — same as <code>/v2/list</code> but includes tags and requires auth.</p>
+  </div>
+</div>
+
+{{/* ── Upload formats ───────────────────────────────────────── */}}
+<div class="card">
+  <h2>Accepted upload formats</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Format</th><th>Extensions</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>JPEG</td><td><code>.jpg</code> <code>.jpeg</code></td><td style="color:var(--muted);font-size:12px;">Standard photo format</td></tr>
+      <tr><td>PNG</td><td><code>.png</code></td><td style="color:var(--muted);font-size:12px;">Lossless</td></tr>
+      <tr><td>WebP</td><td><code>.webp</code></td><td style="color:var(--muted);font-size:12px;">Google modern format</td></tr>
+      <tr><td>HEIC / HEIF</td><td><code>.heic</code> <code>.heif</code></td><td style="color:var(--muted);font-size:12px;">Apple device photos</td></tr>
+      <tr><td>AVIF</td><td><code>.avif</code></td><td style="color:var(--muted);font-size:12px;">AV1 image, excellent compression</td></tr>
+      <tr><td>TIFF</td><td><code>.tiff</code> <code>.tif</code></td><td style="color:var(--muted);font-size:12px;">High-quality, lossless</td></tr>
+      <tr><td>GIF</td><td><code>.gif</code></td><td style="color:var(--muted);font-size:12px;">Animated GIFs fully supported</td></tr>
+    </tbody>
+  </table></div>
+  <p style="color:var(--muted);font-size:12px;margin-top:12px;">Format is auto-detected from file content (magic bytes), not filename or Content-Type. Max upload size: 100 MB.</p>
+</div>
+
 </main></body></html>
 {{end}}
