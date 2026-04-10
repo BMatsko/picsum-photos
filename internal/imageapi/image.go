@@ -129,6 +129,10 @@ func getOutputFormat(extension string) image.OutputFormat {
 		return image.WebP
 	case ".png":
 		return image.PNG
+	case ".tiff", ".tif":
+		return image.TIFF
+	case ".avif":
+		return image.AVIF
 	default:
 		return image.JPEG
 	}
@@ -140,6 +144,10 @@ func getContentType(extension string) string {
 		return "image/webp"
 	case ".png":
 		return "image/png"
+	case ".tiff", ".tif":
+		return "image/tiff"
+	case ".avif":
+		return "image/avif"
 	default:
 		return "image/jpeg"
 	}

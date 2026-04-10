@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/DMarby/picsum-photos/internal/database/postgres"
+	imageformat "github.com/DMarby/picsum-photos/internal/storage/format"
 	sftpStorage "github.com/DMarby/picsum-photos/internal/storage/sftp"
 	"github.com/gorilla/mux"
 )
@@ -210,14 +211,8 @@ func (a *Admin) handleUpload(w http.ResponseWriter, r *http.Request) {
 		imgURL = header.Filename
 	}
 
-	// Determine extension from MIME type
-	fileExt := ".jpg"
-	if header != nil {
-		mt := header.Header.Get("Content-Type")
-		if mt == "image/png" {
-			fileExt = ".png"
-		}
-	}
+	// Detect extension from magic bytes (more reliable than Content-Type)
+	fileExt := imageformat.DetectExtension(data)
 
 	// Write file to storage (SFTP or local)
 	if a.SFTP != nil {

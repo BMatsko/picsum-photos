@@ -34,6 +34,22 @@ int save_image_to_webp_buffer(VipsImage *image, void **buf, size_t *len) {
   return vips_webpsave_buffer(image, buf, len, NULL);
 }
 
+int save_image_to_tiff_buffer(VipsImage *image, void **buf, size_t *len) {
+  if (image == NULL) {
+    vips_error("tiffsave_buffer", "no image data\n");
+    return -1;
+  }
+  return vips_tiffsave_buffer(image, buf, len, NULL);
+}
+
+int save_image_to_avif_buffer(VipsImage *image, void **buf, size_t *len) {
+  if (image == NULL) {
+    vips_error("heifsave_buffer", "no image data\n");
+    return -1;
+  }
+  return vips_heifsave_buffer(image, buf, len, "compression", VIPS_FOREIGN_HEIF_COMPRESSION_AV1, NULL);
+}
+
 int resize_image(void *buf, size_t len, VipsImage **out, int width, int height, VipsInteresting interesting) {
   return vips_thumbnail_buffer(buf, len, out, width, "height", height, "crop", interesting, NULL);
 }

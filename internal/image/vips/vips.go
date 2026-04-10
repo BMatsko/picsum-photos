@@ -131,6 +131,14 @@ func taskProcessor(cache *image.Cache, tracer *tracing.Tracer) func(ctx context.
 			_, span := tracer.Start(ctx, "image.saveToPngBuffer")
 			buffer, err = processedImage.saveToPngBuffer()
 			span.End()
+		case image.TIFF:
+			_, span := tracer.Start(ctx, "image.saveToTiffBuffer")
+			buffer, err = processedImage.saveToTiffBuffer()
+			span.End()
+		case image.AVIF:
+			_, span := tracer.Start(ctx, "image.saveToAvifBuffer")
+			buffer, err = processedImage.saveToAvifBuffer()
+			span.End()
 		}
 
 		if err != nil {

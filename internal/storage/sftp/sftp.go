@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DMarby/picsum-photos/internal/storage"
+	imageformat "github.com/DMarby/picsum-photos/internal/storage/format"
 	pkgsftp "github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
@@ -67,9 +68,9 @@ func New(cfg Config) (*Provider, error) {
 	return &Provider{client: client, basePath: cfg.BasePath}, nil
 }
 
-// Get fetches the image bytes for the given id from the SFTP server, trying .jpg then .png.
+// Get fetches the image bytes for the given id from the SFTP server, trying all supported extensions.
 func (p *Provider) Get(ctx context.Context, id string) ([]byte, error) {
-	for _, ext := range []string{".jpg", ".png"} {
+	for _, ext := range imageformat.SupportedExtensions {
 		remotePath := path.Join(p.basePath, id+ext)
 		f, err := p.client.Open(remotePath)
 		if err != nil {

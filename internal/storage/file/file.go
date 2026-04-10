@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/DMarby/picsum-photos/internal/storage"
+	imageformat "github.com/DMarby/picsum-photos/internal/storage/format"
 )
 
 // Provider implements a file-based image storage
@@ -25,9 +26,9 @@ func New(path string) (*Provider, error) {
 	}, nil
 }
 
-// Get returns the image data for an image id, trying .jpg then .png.
+// Get returns the image data for an image id, trying all supported extensions.
 func (p *Provider) Get(ctx context.Context, id string) ([]byte, error) {
-	for _, ext := range []string{".jpg", ".png"} {
+	for _, ext := range imageformat.SupportedExtensions {
 		data, err := os.ReadFile(filepath.Join(p.path, id+ext))
 		if err == nil {
 			return data, nil

@@ -136,6 +136,38 @@ func SaveToJpegBuffer(image Image) ([]byte, error) {
 	return buffer, nil
 }
 
+// SaveToTiffBuffer saves an image as TIFF to a buffer
+func SaveToTiffBuffer(image Image) ([]byte, error) {
+	defer UnrefImage(image)
+
+	var bufferPointer unsafe.Pointer
+	bufferLength := C.size_t(0)
+
+	errCode := C.save_image_to_tiff_buffer(image, &bufferPointer, &bufferLength)
+	if errCode != 0 {
+		return nil, fmt.Errorf("error saving to tiff buffer %s", catchVipsError())
+	}
+	buffer := C.GoBytes(bufferPointer, C.int(bufferLength))
+	C.g_free(C.gpointer(bufferPointer))
+	return buffer, nil
+}
+
+// SaveToAvifBuffer saves an image as AVIF to a buffer
+func SaveToAvifBuffer(image Image) ([]byte, error) {
+	defer UnrefImage(image)
+
+	var bufferPointer unsafe.Pointer
+	bufferLength := C.size_t(0)
+
+	errCode := C.save_image_to_avif_buffer(image, &bufferPointer, &bufferLength)
+	if errCode != 0 {
+		return nil, fmt.Errorf("error saving to avif buffer %s", catchVipsError())
+	}
+	buffer := C.GoBytes(bufferPointer, C.int(bufferLength))
+	C.g_free(C.gpointer(bufferPointer))
+	return buffer, nil
+}
+
 // SaveToPngBuffer saves an image as PNG to a buffer
 func SaveToPngBuffer(image Image) ([]byte, error) {
 	defer UnrefImage(image)

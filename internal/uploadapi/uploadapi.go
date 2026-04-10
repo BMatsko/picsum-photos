@@ -31,6 +31,8 @@ import (
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
+	_ "golang.org/x/image/tiff"
+	_ "golang.org/x/image/webp"
 	"io"
 	"net/http"
 	"os"
@@ -40,6 +42,7 @@ import (
 
 	"github.com/DMarby/picsum-photos/internal/database"
 	"github.com/DMarby/picsum-photos/internal/database/postgres"
+	imageformat "github.com/DMarby/picsum-photos/internal/storage/format"
 	sftpStorage "github.com/DMarby/picsum-photos/internal/storage/sftp"
 	"github.com/gorilla/mux"
 )
@@ -162,10 +165,7 @@ func (a *API) handleUploadFromFile(w http.ResponseWriter, r *http.Request) {
 		imgURL = header.Filename
 	}
 
-	fileExt := ".jpg"
-	if header.Header.Get("Content-Type") == "image/png" {
-		fileExt = ".png"
-	}
+	fileExt := imageformat.DetectExtension(data)
 
 	a.finishUpload(w, r, id, author, imgURL, fileExt, parseTags(r.FormValue("tags")), data)
 }

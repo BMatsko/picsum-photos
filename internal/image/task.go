@@ -22,6 +22,12 @@ const (
 	WebP
 	// PNG represents the PNG format
 	PNG
+	// TIFF represents the TIFF format
+	TIFF
+	// AVIF represents the AVIF format
+	AVIF
+	// TODO: GIF - requires full animated GIF pipeline (import + export both gif)
+	// GIF
 )
 
 // NewTask creates a new image processing task
