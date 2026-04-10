@@ -1,13 +1,151 @@
 {{define "dashboard.html"}}<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><title>Dashboard — Brayden's Pic</title>{{template "style" .}}</head>
-<body>{{template "nav" (map "Page" "dashboard")}}
+<html lang="en"><head><meta charset="UTF-8"><title>Dashboard — Brayden's Pic</title>{{template "style" .}}
+<style>
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;margin-bottom:24px}
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+@media(max-width:768px){.chart-grid{grid-template-columns:1fr}}
+.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow)}
+.chart-card h2{font-family:var(--font-heading);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:16px}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:12px}
+.bar-row .label{width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);flex-shrink:0;font-family:var(--font-sans)}
+.bar-row .bar-track{flex:1;background:var(--bg);border-radius:4px;height:10px;overflow:hidden}
+.bar-row .bar-fill{height:100%;border-radius:4px;transition:width .4s ease}
+.bar-row .count{width:28px;text-align:right;color:var(--muted);flex-shrink:0}
+.filter-row{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.filter-btn{padding:5px 12px;border-radius:20px;font-size:12px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;font-family:var(--font-sans);transition:all .12s}
+.filter-btn.active{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
+.donut-wrap{display:flex;align-items:center;gap:20px}
+.donut-wrap canvas{flex-shrink:0}
+.donut-legend{flex:1}
+.donut-legend-item{display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:12px}
+.donut-swatch{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+</style>
+</head>
+<body>{{template "nav" .}}
+{{template "topbar" .}}
 <main>
 <h1>Dashboard</h1>
-<p class="sub">Photo randomizer at <a class="link" href="{{.RootURL}}">{{.RootURL}}</a></p>
-<div style="display:grid;grid-template-columns:repeat(2,160px);gap:14px;margin-bottom:28px;">
+<p class="sub"><a class="link" href="{{.RootURL}}">{{.RootURL}}</a></p>
+
+<!-- Stat strip -->
+<div class="stat-grid">
   <div class="stat"><div class="num">{{.PhotoCount}}</div><div class="lbl">Photos</div></div>
-  <div class="stat"><div class="num" style="font-size:16px;padding-top:10px;">Active</div><div class="lbl">Service</div></div>
+  <div class="stat"><div class="num">{{.Untagged}}</div><div class="lbl">Untagged</div></div>
+  <div class="stat"><div class="num">{{.SeedTotal}}</div><div class="lbl">Seeds</div></div>
+  <div class="stat"><div class="num">{{.SeedTagged}}</div><div class="lbl">Tagged seeds</div></div>
+  <div class="stat"><div class="num" style="font-size:18px;padding-top:6px;">{{.AvgW}}×{{.AvgH}}</div><div class="lbl">Avg dimensions</div></div>
 </div>
+
+<!-- Charts row -->
+<div class="chart-grid">
+
+  <!-- Photos by author -->
+  <div class="chart-card">
+    <h2>Photos by author</h2>
+    {{if .AuthorStats}}
+    {{$max := (index .AuthorStats 0).V}}
+    <div id="authorBars">
+    {{range .AuthorStats}}
+    <div class="bar-row" data-val="{{.V}}">
+      <span class="label" title="{{.K}}">{{.K}}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:{{percent .V $max}}%;background:var(--blue);"></div></div>
+      <span class="count">{{.V}}</span>
+    </div>
+    {{end}}
+    </div>
+    {{else}}
+    <p style="color:var(--muted);font-size:13px;">No photos yet.</p>
+    {{end}}
+  </div>
+
+  <!-- Photos by tag (with filter buttons) -->
+  <div class="chart-card">
+    <h2>Photos by tag</h2>
+    {{if .TagStats}}
+    <div class="filter-row" id="tagFilter">
+      <button class="filter-btn active" onclick="filterTagChart('all',this)">All</button>
+      {{range .TagStats}}
+      <button class="filter-btn" onclick="filterTagChart('{{.K}}',this)">{{.K}}</button>
+      {{end}}
+    </div>
+    {{$tmax := (index .TagStats 0).V}}
+    <div id="tagBars">
+    {{range .TagStats}}
+    <div class="bar-row" data-tag="{{.K}}" data-val="{{.V}}">
+      <span class="label" title="{{.K}}">{{.K}}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:{{percent .V $tmax}}%;background:var(--green);"></div></div>
+      <span class="count">{{.V}}</span>
+    </div>
+    {{end}}
+    {{if gt .Untagged 0}}
+    <div class="bar-row" data-tag="__untagged__" data-val="{{.Untagged}}">
+      <span class="label" style="color:var(--muted);font-style:italic;">untagged</span>
+      <div class="bar-track"><div class="bar-fill" style="width:{{percent .Untagged $tmax}}%;background:var(--border);"></div></div>
+      <span class="count">{{.Untagged}}</span>
+    </div>
+    {{end}}
+    </div>
+    {{else}}
+    <p style="color:var(--muted);font-size:13px;">No tags assigned yet.</p>
+    {{end}}
+  </div>
+
+  <!-- Seeds breakdown donut -->
+  <div class="chart-card">
+    <h2>Seed coverage</h2>
+    {{if gt .SeedTotal 0}}
+    <div class="donut-wrap">
+      <canvas id="seedDonut" width="110" height="110"></canvas>
+      <div class="donut-legend">
+        <div class="donut-legend-item"><div class="donut-swatch" style="background:#5954F9"></div><span style="color:var(--text);">Tagged — {{.SeedTagged}}</span></div>
+        <div class="donut-legend-item"><div class="donut-swatch" style="background:#e5e7eb"></div><span style="color:var(--muted);">Untagged — {{seedUntagged .SeedTotal .SeedTagged}}</span></div>
+        <div style="margin-top:10px;font-size:12px;color:var(--muted);">{{seedPct .SeedTagged .SeedTotal}}% tagged</div>
+      </div>
+    </div>
+    {{else}}
+    <p style="color:var(--muted);font-size:13px;">No seeds resolved yet.</p>
+    {{end}}
+  </div>
+
+  <!-- Coverage gaps -->
+  <div class="chart-card">
+    <h2>Coverage gaps</h2>
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;">
+          <span style="color:var(--text);">Photos with tags</span>
+          <span style="color:var(--muted);">{{taggedCount .PhotoCount .Untagged}} / {{.PhotoCount}}</span>
+        </div>
+        <div style="background:var(--bg);border-radius:4px;height:8px;overflow:hidden;">
+          <div style="height:100%;border-radius:4px;background:var(--blue);width:{{taggedPct .PhotoCount .Untagged}}%;transition:width .4s;"></div>
+        </div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;">
+          <span style="color:var(--text);">Seeds with tags</span>
+          <span style="color:var(--muted);">{{.SeedTagged}} / {{.SeedTotal}}</span>
+        </div>
+        <div style="background:var(--bg);border-radius:4px;height:8px;overflow:hidden;">
+          <div style="height:100%;border-radius:4px;background:var(--green);width:{{seedPct .SeedTagged .SeedTotal}}%;transition:width .4s;"></div>
+        </div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;">
+          <span style="color:var(--text);">Untagged photos</span>
+          <span style="color:{{if gt .Untagged 0}}var(--red){{else}}var(--success-color){{end}};">{{.Untagged}}</span>
+        </div>
+        {{if gt .Untagged 0}}
+        <a href="/admin/photos" class="btn btn-ghost" style="font-size:11px;padding:5px 12px;">Review photos →</a>
+        {{else}}
+        <span style="font-size:12px;color:var(--success-color);">All photos tagged ✓</span>
+        {{end}}
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Quick links -->
 <div class="card">
   <h2>Quick links</h2>
   <div class="table-wrap"><table><tbody>
@@ -16,10 +154,58 @@
     <tr><td><code>{{.RootURL}}/v2/list</code></td><td><a class="link" href="{{.RootURL}}/v2/list" target="_blank">Photo list JSON →</a></td></tr>
   </tbody></table></div>
 </div>
-<div style="display:flex;gap:10px;">
+<div style="display:flex;gap:10px;flex-wrap:wrap;">
   <a href="/admin/photos" class="btn btn-primary">Manage photos</a>
   <a href="/admin/seeds" class="btn btn-ghost">View seeds</a>
+  <a href="/admin/tags" class="btn btn-ghost">Manage tags</a>
   <a href="/admin/docs" class="btn btn-ghost">API docs</a>
 </div>
+
+<script>
+// Tag chart filter
+function filterTagChart(tag, btn) {
+  document.querySelectorAll('#tagFilter .filter-btn').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  document.querySelectorAll('#tagBars .bar-row').forEach(function(row) {
+    if (tag === 'all') { row.style.display = ''; return; }
+    row.style.display = (row.dataset.tag === tag) ? '' : 'none';
+  });
+}
+
+// Donut chart
+{{if gt .SeedTotal 0}}
+(function() {
+  var canvas = document.getElementById('seedDonut');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var tagged = {{.SeedTagged}};
+  var total = {{.SeedTotal}};
+  var untagged = total - tagged;
+  var cx = 55, cy = 55, r = 42, thickness = 14;
+  var start = -Math.PI / 2;
+
+  function arc(val, tot, color) {
+    var angle = (val / tot) * 2 * Math.PI;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, start, start + angle);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = thickness;
+    ctx.stroke();
+    start += angle;
+  }
+
+  ctx.clearRect(0, 0, 110, 110);
+  if (tagged > 0) arc(tagged, total, '#5954F9');
+  if (untagged > 0) arc(untagged, total, '#e5e7eb');
+
+  // Centre label
+  ctx.fillStyle = '#084861';
+  ctx.font = 'bold 18px Terminal Land Mono, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(total, cx, cy);
+})();
+{{end}}
+</script>
 </main></body></html>
 {{end}}

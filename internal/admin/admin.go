@@ -64,6 +64,22 @@ func New(db *postgres.Provider, storagePath string, sftp *sftpStorage.Provider, 
 			}
 		},
 		"join": strings.Join,
+		"percent": func(val, max int) int {
+			if max == 0 { return 0 }
+			v := val * 100 / max
+			if v < 2 && val > 0 { return 2 }
+			return v
+		},
+		"taggedCount": func(total, untagged int) int { return total - untagged },
+		"taggedPct": func(total, untagged int) int {
+			if total == 0 { return 0 }
+			return (total - untagged) * 100 / total
+		},
+		"seedPct": func(tagged, total int) int {
+			if total == 0 { return 0 }
+			return tagged * 100 / total
+		},
+		"seedUntagged": func(total, tagged int) int { return total - tagged },
 	}).ParseFS(templateFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parsing admin templates: %w", err)
