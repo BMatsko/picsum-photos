@@ -567,6 +567,21 @@ func (p *Provider) DeleteTag(ctx context.Context, id string) error {
 	return err
 }
 
+// ResolveTags resolves a slice of tags, replacing aliases with canonical names.
+// Deduplicates the result preserving order.
+func (p *Provider) ResolveTags(ctx context.Context, tags []string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, t := range tags {
+		resolved := p.ResolveTag(ctx, t)
+		if _, exists := seen[resolved]; !exists {
+			seen[resolved] = struct{}{}
+			out = append(out, resolved)
+		}
+	}
+	return out
+}
+
 // ResolveTag takes any tag string (canonical name or alias) and returns
 // the canonical name. Returns the input unchanged if no match is found.
 func (p *Provider) ResolveTag(ctx context.Context, tag string) string {

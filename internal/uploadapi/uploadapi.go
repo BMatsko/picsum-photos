@@ -288,6 +288,8 @@ func (a *API) finishUpload(w http.ResponseWriter, r *http.Request, id, author, i
 		}
 	}
 
+	// Resolve tag aliases to canonical names before storing
+	tags = a.DB.ResolveTags(r.Context(), tags)
 	// Insert into DB
 	_, dbErr := a.DB.Pool().Exec(r.Context(),
 		`INSERT INTO images (id, author, url, filename, width, height, tags) VALUES ($1,$2,$3,$4,$5,$6,$7)

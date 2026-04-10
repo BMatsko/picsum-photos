@@ -320,6 +320,8 @@ func (a *Admin) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Resolve tag aliases to canonical names before storing
+	tags = a.DB.ResolveTags(r.Context(), tags)
 	_, err = a.DB.Pool().Exec(r.Context(),
 		`INSERT INTO images (id, author, url, filename, width, height, tags) VALUES ($1,$2,$3,$4,$5,$6,$7)
 		 ON CONFLICT (id) DO UPDATE SET author=$2, url=$3, filename=$4, width=$5, height=$6, tags=$7`,
@@ -363,6 +365,8 @@ func (a *Admin) handleUpdateTags(w http.ResponseWriter, r *http.Request) {
 			tags = append(tags, t)
 		}
 	}
+	// Resolve aliases to canonical tag names
+	tags = a.DB.ResolveTags(r.Context(), tags)
 
 	if _, err := a.DB.Pool().Exec(r.Context(),
 		`UPDATE images SET tags = $1 WHERE id = $2`, tags, id); err != nil {
