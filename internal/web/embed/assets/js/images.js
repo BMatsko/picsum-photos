@@ -46,6 +46,7 @@ function loadPage (page) {
 
         // Image
         clone.querySelector('img').src = '/id/' + image.id + '/367/267'
+        clone.querySelector('img').alt = image.alt_text || ''
         clone.querySelector('.download-url').href = image.download_url
 
         // Author
