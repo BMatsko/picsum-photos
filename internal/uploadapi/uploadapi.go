@@ -25,7 +25,7 @@
 //	    id         string   optional
 //	    url        string   optional override for source label (defaults to photo_url)
 //
-//	Returns 201 JSON: { "id": "...", "width": ..., "height": ..., "author": "...", "url": "...", "tags": [...] }
+//	Returns 201 JSON: { "id": "...", "width": ..., "height": ..., "author": "...", "url": "...", "tags": [...], "notes": "...", "alt_text": "..." }
 package uploadapi
 
 import (
