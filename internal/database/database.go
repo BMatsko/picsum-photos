@@ -7,11 +7,13 @@ import (
 
 // Image contains metadata about an image
 type Image struct {
-	ID     string `json:"id"`
-	Author string `json:"author"`
-	Width  int    `json:"width"`
-	Height int    `json:"height"`
-	URL    string `json:"url"`
+	ID      string `json:"id"`
+	Author  string `json:"author"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	URL     string `json:"url"`
+	Notes   string `json:"notes"`
+	AltText string `json:"alt_text"`
 }
 
 // Provider is an interface for listing and retrieving images
