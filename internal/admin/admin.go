@@ -105,6 +105,7 @@ func (a *Admin) Router() http.Handler {
 	r.HandleFunc("/admin/photos/upload", a.auth(a.handleUpload)).Methods("POST")
 	r.HandleFunc("/admin/photos/{id}/delete", a.auth(a.handleDelete)).Methods("POST")
 	r.HandleFunc("/admin/photos/{id}/tags", a.auth(a.handleUpdateTags)).Methods("POST")
+	r.HandleFunc("/admin/photos/{id}/metadata", a.auth(a.handleUpdateMetadata)).Methods("POST")
 	r.HandleFunc("/admin/seeds", a.auth(a.handleSeeds)).Methods("GET")
 	r.HandleFunc("/admin/seeds/clear", a.auth(a.handleClearSeed)).Methods("POST")
 	r.HandleFunc("/admin/seeds/clear-by-tag", a.auth(a.handleClearSeedsByTag)).Methods("POST")
@@ -253,6 +254,8 @@ func (a *Admin) handleUpload(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.FormValue("id"))
 	author := strings.TrimSpace(r.FormValue("author"))
 	imgURL := strings.TrimSpace(r.FormValue("url"))
+	notes := strings.TrimSpace(r.FormValue("notes"))
+	altText := strings.TrimSpace(r.FormValue("alt_text"))
 	tagsRaw := strings.TrimSpace(r.FormValue("tags"))
 
 	var width, height int
@@ -323,9 +326,9 @@ func (a *Admin) handleUpload(w http.ResponseWriter, r *http.Request) {
 	// Resolve tag aliases to canonical names before storing
 	tags = a.DB.ResolveTags(r.Context(), tags)
 	_, err = a.DB.Pool().Exec(r.Context(),
-		`INSERT INTO images (id, author, url, filename, width, height, tags) VALUES ($1,$2,$3,$4,$5,$6,$7)
-		 ON CONFLICT (id) DO UPDATE SET author=$2, url=$3, filename=$4, width=$5, height=$6, tags=$7`,
-		id, author, imgURL, filename, width, height, tags,
+		`INSERT INTO images (id, author, url, filename, width, height, tags, notes, alt_text) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		 ON CONFLICT (id) DO UPDATE SET author=$2, url=$3, filename=$4, width=$5, height=$6, tags=$7, notes=$8, alt_text=$9`,
+		id, author, imgURL, filename, width, height, tags, notes, altText,
 	)
 	if err != nil {
 		if a.SFTP != nil {
@@ -374,6 +377,20 @@ func (a *Admin) handleUpdateTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/admin/photos?success=Tags+updated", http.StatusFound)
+}
+
+func (a *Admin) handleUpdateMetadata(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	r.ParseForm()
+	notes := strings.TrimSpace(r.FormValue("notes"))
+	altText := strings.TrimSpace(r.FormValue("alt_text"))
+
+	if _, err := a.DB.Pool().Exec(r.Context(),
+		`UPDATE images SET notes = $1, alt_text = $2 WHERE id = $3`, notes, altText, id); err != nil {
+		http.Redirect(w, r, "/admin/photos?error=Metadata+update+failed", http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, "/admin/photos?success=Metadata+updated", http.StatusFound)
 }
 
 func (a *Admin) handleSeeds(w http.ResponseWriter, r *http.Request) {
