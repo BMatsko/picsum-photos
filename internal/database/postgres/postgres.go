@@ -26,12 +26,16 @@ CREATE TABLE IF NOT EXISTS images (
 	filename TEXT NOT NULL DEFAULT '',
 	width    INTEGER NOT NULL DEFAULT 0,
 	height   INTEGER NOT NULL DEFAULT 0,
-	tags     TEXT[] NOT NULL DEFAULT '{}'
+	tags     TEXT[] NOT NULL DEFAULT '{}',
+	notes    TEXT   NOT NULL DEFAULT '',
+	alt_text TEXT   NOT NULL DEFAULT ''
 );
 
 -- Migrations for existing tables
 ALTER TABLE images ADD COLUMN IF NOT EXISTS tags     TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE images ADD COLUMN IF NOT EXISTS filename TEXT   NOT NULL DEFAULT '';
+ALTER TABLE images ADD COLUMN IF NOT EXISTS notes    TEXT   NOT NULL DEFAULT '';
+ALTER TABLE images ADD COLUMN IF NOT EXISTS alt_text TEXT   NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS seed_resolutions (
 	seed       TEXT NOT NULL,
@@ -120,9 +124,9 @@ func (p *Provider) Pool() *pgxpool.Pool {
 // Get returns the image with the given ID.
 func (p *Provider) Get(ctx context.Context, id string) (*database.Image, error) {
 	row := p.pool.QueryRow(ctx,
-		`SELECT id, author, url, width, height FROM images WHERE id = $1`, id)
+		`SELECT id, author, url, width, height, notes, alt_text FROM images WHERE id = $1`, id)
 	img := &database.Image{}
-	if err := row.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height); err != nil {
+	if err := row.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height, &img.Notes, &img.AltText); err != nil {
 		return nil, database.ErrNotFound
 	}
 	return img, nil
@@ -131,9 +135,9 @@ func (p *Provider) Get(ctx context.Context, id string) (*database.Image, error) 
 // GetRandom returns a random image.
 func (p *Provider) GetRandom(ctx context.Context) (*database.Image, error) {
 	row := p.pool.QueryRow(ctx,
-		`SELECT id, author, url, width, height FROM images ORDER BY random() LIMIT 1`)
+		`SELECT id, author, url, width, height, notes, alt_text FROM images ORDER BY random() LIMIT 1`)
 	img := &database.Image{}
-	if err := row.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height); err != nil {
+	if err := row.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height, &img.Notes, &img.AltText); err != nil {
 		return nil, database.ErrNotFound
 	}
 	return img, nil
@@ -142,10 +146,10 @@ func (p *Provider) GetRandom(ctx context.Context) (*database.Image, error) {
 // GetRandomByAuthor returns a random image filtered by author (case-insensitive exact match).
 func (p *Provider) GetRandomByAuthor(ctx context.Context, author string) (*database.Image, error) {
 	row := p.pool.QueryRow(ctx,
-		`SELECT id, author, url, width, height FROM images WHERE lower(author) = lower($1) ORDER BY random() LIMIT 1`,
+		`SELECT id, author, url, width, height, notes, alt_text FROM images WHERE lower(author) = lower($1) ORDER BY random() LIMIT 1`,
 		author)
 	img := &database.Image{}
-	if err := row.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height); err != nil {
+	if err := row.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height, &img.Notes, &img.AltText); err != nil {
 		// Fall back to any random image if author has none
 		return p.GetRandom(ctx)
 	}
@@ -179,9 +183,9 @@ func (p *Provider) GetRandomWithSeedAndTag(ctx context.Context, seed int64, seed
 	if storedImageID != nil {
 		// Image still exists — return it
 		row := p.pool.QueryRow(ctx,
-			`SELECT id, author, url, width, height FROM images WHERE id = $1`, *storedImageID)
+			`SELECT id, author, url, width, height, notes, alt_text FROM images WHERE id = $1`, *storedImageID)
 		img := &database.Image{}
-		if err := row.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height); err == nil {
+		if err := row.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height, &img.Notes, &img.AltText); err == nil {
 			return img, nil
 		}
 		// Image was deleted — fall through to re-resolve below
@@ -242,12 +246,12 @@ func (p *Provider) getRandomWithSeedAndTag(ctx context.Context, seed int64, tag 
 
 	if tag != "" {
 		r, e := p.pool.Query(ctx,
-			`SELECT id, author, url, width, height FROM images WHERE $1 = ANY(tags) ORDER BY id`,
+			`SELECT id, author, url, width, height, notes, alt_text FROM images WHERE $1 = ANY(tags) ORDER BY id`,
 			tag)
 		rows, err = r, e
 	} else {
 		r, e := p.pool.Query(ctx,
-			`SELECT id, author, url, width, height FROM images ORDER BY id`)
+			`SELECT id, author, url, width, height, notes, alt_text FROM images ORDER BY id`)
 		rows, err = r, e
 	}
 	if err != nil {
@@ -258,7 +262,7 @@ func (p *Provider) getRandomWithSeedAndTag(ctx context.Context, seed int64, tag 
 	var images []database.Image
 	for rows.Next() {
 		img := database.Image{}
-		if err := rows.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height); err != nil {
+		if err := rows.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height, &img.Notes, &img.AltText); err != nil {
 			return nil, err
 		}
 		images = append(images, img)
@@ -306,7 +310,7 @@ func (p *Provider) listFiltered(ctx context.Context, author string, offset, limi
 			Err() error
 		}
 		r, err = p.pool.Query(ctx,
-			`SELECT id, author, url, width, height FROM images WHERE lower(author) = lower($1) ORDER BY id LIMIT $2 OFFSET $3`,
+			`SELECT id, author, url, width, height, notes, alt_text FROM images WHERE lower(author) = lower($1) ORDER BY id LIMIT $2 OFFSET $3`,
 			author, limit, offset)
 		rows = r
 	} else {
@@ -317,7 +321,7 @@ func (p *Provider) listFiltered(ctx context.Context, author string, offset, limi
 			Err() error
 		}
 		r, err = p.pool.Query(ctx,
-			`SELECT id, author, url, width, height FROM images ORDER BY id LIMIT $1 OFFSET $2`,
+			`SELECT id, author, url, width, height, notes, alt_text FROM images ORDER BY id LIMIT $1 OFFSET $2`,
 			limit, offset)
 		rows = r
 	}
@@ -329,7 +333,7 @@ func (p *Provider) listFiltered(ctx context.Context, author string, offset, limi
 	var images []database.Image
 	for rows.Next() {
 		img := database.Image{}
-		if err := rows.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height); err != nil {
+		if err := rows.Scan(&img.ID, &img.Author, &img.URL, &img.Width, &img.Height, &img.Notes, &img.AltText); err != nil {
 			return nil, err
 		}
 		images = append(images, img)
@@ -374,7 +378,7 @@ func (p *Provider) ListDistinctAuthors(ctx context.Context) ([]string, error) {
 // ListAllWithTags returns images including their tags and filename (for admin use).
 func (p *Provider) ListAllWithTags(ctx context.Context) ([]ImageWithTags, error) {
 	rows, err := p.pool.Query(ctx,
-		`SELECT id, author, url, filename, width, height, tags FROM images ORDER BY id`)
+		`SELECT id, author, url, filename, width, height, tags, notes, alt_text FROM images ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +387,7 @@ func (p *Provider) ListAllWithTags(ctx context.Context) ([]ImageWithTags, error)
 	var images []ImageWithTags
 	for rows.Next() {
 		img := ImageWithTags{}
-		if err := rows.Scan(&img.ID, &img.Author, &img.URL, &img.Filename, &img.Width, &img.Height, &img.Tags); err != nil {
+		if err := rows.Scan(&img.ID, &img.Author, &img.URL, &img.Filename, &img.Width, &img.Height, &img.Tags, &img.Notes, &img.AltText); err != nil {
 			return nil, err
 		}
 		images = append(images, img)
