@@ -9,6 +9,8 @@
 //	    photo    file     JPEG or PNG file attachment
 //	    author   string   required
 //	    tags     string   comma-separated, optional
+//	    notes    string   optional image notes
+//	    alt_text string   optional alt text for accessibility
 //	    id       string   optional — auto-incremented if omitted
 //	    url      string   optional source label
 //	    width    int      optional — auto-detected from image
@@ -18,6 +20,8 @@
 //	    photo_url  string   public URL to fetch and re-host
 //	    author     string   required
 //	    tags       string   comma-separated, optional
+//	    notes      string   optional image notes
+//	    alt_text   string   optional alt text for accessibility
 //	    id         string   optional
 //	    url        string   optional override for source label (defaults to photo_url)
 //
@@ -167,7 +171,9 @@ func (a *API) handleUploadFromFile(w http.ResponseWriter, r *http.Request) {
 
 	fileExt := imageformat.DetectExtension(data)
 
-	a.finishUpload(w, r, id, author, imgURL, header.Filename, fileExt, parseTags(r.FormValue("tags")), data)
+	notes := strings.TrimSpace(r.FormValue("notes"))
+	altText := strings.TrimSpace(r.FormValue("alt_text"))
+	a.finishUpload(w, r, id, author, imgURL, header.Filename, fileExt, notes, altText, parseTags(r.FormValue("tags")), data)
 }
 
 // ── Mode 2: URL fetch ─────────────────────────────────────────────────────
@@ -176,6 +182,8 @@ type urlUploadRequest struct {
 	PhotoURL string `json:"photo_url"`
 	Author   string `json:"author"`
 	Tags     string `json:"tags"`
+	Notes    string `json:"notes"`
+	AltText  string `json:"alt_text"`
 	ID       string `json:"id"`
 	URL      string `json:"url"`
 }
@@ -187,7 +195,7 @@ func (a *API) handleUploadFromJSON(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	a.fetchAndStore(w, r, req.PhotoURL, req.Author, req.URL, req.Tags, req.ID)
+	a.fetchAndStore(w, r, req.PhotoURL, req.Author, req.URL, req.Tags, req.Notes, req.AltText, req.ID)
 }
 
 // handleUploadFromURL reads photo_url from a multipart form.
@@ -197,11 +205,13 @@ func (a *API) handleUploadFromURL(w http.ResponseWriter, r *http.Request) {
 		r.FormValue("author"),
 		r.FormValue("url"),
 		r.FormValue("tags"),
+		r.FormValue("notes"),
+		r.FormValue("alt_text"),
 		r.FormValue("id"),
 	)
 }
 
-func (a *API) fetchAndStore(w http.ResponseWriter, r *http.Request, photoURL, author, srcURL, tagsRaw, id string) {
+func (a *API) fetchAndStore(w http.ResponseWriter, r *http.Request, photoURL, author, srcURL, tagsRaw, notes, altText, id string) {
 	author = strings.TrimSpace(author)
 	if author == "" {
 		jsonError(w, "author is required", http.StatusBadRequest)
@@ -262,12 +272,12 @@ func (a *API) fetchAndStore(w http.ResponseWriter, r *http.Request, photoURL, au
 	fetchedFilename := photoURL
 	if li := strings.LastIndex(photoURL, "/"); li >= 0 { fetchedFilename = photoURL[li+1:] }
 	if qi := strings.Index(fetchedFilename, "?"); qi >= 0 { fetchedFilename = fetchedFilename[:qi] }
-	a.finishUpload(w, r, id, author, srcURL, fetchedFilename, fileExt, parseTags(tagsRaw), data)
+	a.finishUpload(w, r, id, author, srcURL, fetchedFilename, fileExt, notes, altText, parseTags(tagsRaw), data)
 }
 
 // ── Shared save + DB logic ────────────────────────────────────────────────
 
-func (a *API) finishUpload(w http.ResponseWriter, r *http.Request, id, author, imgURL, filename, fileExt string, tags []string, data []byte) {
+func (a *API) finishUpload(w http.ResponseWriter, r *http.Request, id, author, imgURL, filename, fileExt, notes, altText string, tags []string, data []byte) {
 	// Detect dimensions
 	var width, height int
 	if cfg, _, err := image.DecodeConfig(bytes.NewReader(data)); err == nil {
@@ -292,9 +302,9 @@ func (a *API) finishUpload(w http.ResponseWriter, r *http.Request, id, author, i
 	tags = a.DB.ResolveTags(r.Context(), tags)
 	// Insert into DB
 	_, dbErr := a.DB.Pool().Exec(r.Context(),
-		`INSERT INTO images (id, author, url, filename, width, height, tags) VALUES ($1,$2,$3,$4,$5,$6,$7)
-		 ON CONFLICT (id) DO UPDATE SET author=$2, url=$3, filename=$4, width=$5, height=$6, tags=$7`,
-		id, author, imgURL, filename, width, height, tags,
+		`INSERT INTO images (id, author, url, filename, width, height, tags, notes, alt_text) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		 ON CONFLICT (id) DO UPDATE SET author=$2, url=$3, filename=$4, width=$5, height=$6, tags=$7, notes=$8, alt_text=$9`,
+		id, author, imgURL, filename, width, height, tags, notes, altText,
 	)
 	if dbErr != nil {
 		if a.SFTP != nil {
@@ -309,12 +319,14 @@ func (a *API) finishUpload(w http.ResponseWriter, r *http.Request, id, author, i
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]any{
-		"id":     id,
-		"author": author,
-		"url":    imgURL,
-		"width":  width,
-		"height": height,
-		"tags":   tags,
+		"id":       id,
+		"author":   author,
+		"url":      imgURL,
+		"width":    width,
+		"height":   height,
+		"tags":     tags,
+		"notes":    notes,
+		"alt_text": altText,
 	})
 }
 
@@ -331,13 +343,16 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 		URL    string   `json:"url"`
 		Width  int      `json:"width"`
 		Height int      `json:"height"`
-		Tags   []string `json:"tags"`
+		Tags     []string `json:"tags"`
+		Notes    string   `json:"notes"`
+		AltText  string   `json:"alt_text"`
 	}
 	out := make([]entry, len(images))
 	for i, img := range images {
 		out[i] = entry{
 			ID: img.ID, Author: img.Author, URL: img.URL,
 			Width: img.Width, Height: img.Height, Tags: img.Tags,
+			Notes: img.Notes, AltText: img.AltText,
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
