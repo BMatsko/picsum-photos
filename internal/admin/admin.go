@@ -735,9 +735,15 @@ func (a *Admin) handleNextID(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"next_id": nextID})
 }
 
-// handleMeta returns distinct tags and authors for picklist population.
+// handleMeta returns registry tags and authors for picklist population.
 func (a *Admin) handleMeta(w http.ResponseWriter, r *http.Request) {
-	tags, _ := a.DB.ListDistinctTags(r.Context())
+	tagEntries, _ := a.DB.ListTagRegistry(r.Context())
+	tags := make([]string, 0, len(tagEntries))
+	for _, tag := range tagEntries {
+		if tag.Name != "" {
+			tags = append(tags, tag.Name)
+		}
+	}
 	authors, _ := a.DB.ListDistinctAuthors(r.Context())
 	if tags == nil {
 		tags = []string{}

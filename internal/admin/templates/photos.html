@@ -108,10 +108,8 @@
     </div>
     <div class="frow">
       <label>Tags <span style="color:var(--muted);font-weight:400;text-transform:none;font-size:11px;">(applied to all)</span></label>
-      <div class="tagpick-wrap">
-        <div class="tagpick" id="bulkTagPick" onclick="this.querySelector('input').focus()"></div>
-        <input type="hidden" id="bulkTagsHidden">
-      </div>
+      <select id="bulkTagsSelect" multiple size="6" style="width:100%;min-height:150px;border:1px solid var(--border);border-radius:8px;padding:8px;background:#fff;"></select>
+      <input type="hidden" id="bulkTagsHidden">
     </div>
   </div>
   <div class="frow" style="margin-bottom:16px;">
@@ -217,8 +215,26 @@ fetch('/admin/api/meta').then(r=>r.json()).then(d=>{
   allAuthors = d.authors || [];
   var dl = document.getElementById('authorList');
   allAuthors.forEach(function(a){ var o=document.createElement('option'); o.value=a; dl.appendChild(o); });
-  // allTags is now populated — suggestions will work on next keystroke automatically
+  populateTagDropdown('bulkTagsSelect', 'bulkTagsHidden');
 });
+
+function populateTagDropdown(selectId, hiddenId) {
+  var select = document.getElementById(selectId);
+  var hidden = document.getElementById(hiddenId);
+  if (!select || !hidden) return;
+  select.innerHTML = '';
+  allTags.forEach(function(tag) {
+    var option = document.createElement('option');
+    option.value = tag;
+    option.textContent = tag;
+    select.appendChild(option);
+  });
+  function sync() {
+    hidden.value = Array.from(select.selectedOptions).map(function(opt) { return opt.value; }).join(', ');
+  }
+  select.addEventListener('change', sync);
+  sync();
+}
 
 // ── Tag picklist component ────────────────────────────────────────────────
 function TagPicklist(container, hiddenInput, initialTags) {
@@ -334,13 +350,6 @@ function initAllPicklists() {
   picklistInstances['upload'] = new TagPicklist(
     document.getElementById('uploadTagPick'),
     document.getElementById('uploadTagsHidden'),
-    []
-  );
-
-  // Bulk upload
-  picklistInstances['bulk'] = new TagPicklist(
-    document.getElementById('bulkTagPick'),
-    document.getElementById('bulkTagsHidden'),
     []
   );
 
