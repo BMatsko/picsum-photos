@@ -46,6 +46,7 @@ function loadPage (page) {
 
         // Image
         clone.querySelector('img').src = '/id/' + image.id + '/367/267'
+        clone.querySelector('img').alt = image.alt_text || ''
         clone.querySelector('.download-url').href = image.download_url
 
         // Author
@@ -55,6 +56,10 @@ function loadPage (page) {
         // Image id indicator
         clone.querySelector('.image-id').innerHTML = '#' + image.id
         clone.querySelector('.image-id').href = image.download_url
+
+        if (window.umami && typeof window.umami.track === 'function') {
+          window.umami.track('image_retrieval', { id: image.id })
+        }
 
         container.appendChild(clone)
       }
@@ -82,6 +87,12 @@ function updateButton (id, page_url) {
     button.removeAttribute('data-page')
     button.classList.add('cursor-not-allowed', 'opacity-50')
     button.classList.remove('hover:text-white', 'hover:bg-gray-500')
+  }
+}
+
+function trackImageRetrieval (imageId) {
+  if (window.umami && typeof window.umami.track === 'function') {
+    window.umami.track('image_retrieval', { id: imageId })
   }
 }
 
