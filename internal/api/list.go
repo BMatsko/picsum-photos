@@ -178,11 +178,13 @@ func (a *API) getLinkHeader(page, limit int, end bool) string {
 func (a *API) getListImage(image database.Image) ListImage {
 	return ListImage{
 		Image: database.Image{
-			ID:     image.ID,
-			Author: image.Author,
-			Width:  image.Width,
-			Height: image.Height,
-			URL:    image.URL,
+			ID:      image.ID,
+			Author:  image.Author,
+			Width:   image.Width,
+			Height:  image.Height,
+			URL:     image.URL,
+			Notes:   image.Notes,
+			AltText: image.AltText,
 		},
 		DownloadURL: fmt.Sprintf("%s/id/%s/%d/%d", a.RootURL, image.ID, image.Width, image.Height),
 	}
