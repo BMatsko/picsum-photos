@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 
 	imageformat "github.com/DMarby/picsum-photos/internal/storage/format"
 )
@@ -21,10 +22,23 @@ type FileResolver struct {
 }
 
 func (r *FileResolver) StoredExtension(ctx context.Context, id string) string {
+	lookupID := normalizeStorageID(id)
 	for _, ext := range imageformat.SupportedExtensions {
-		if _, err := os.Stat(filepath.Join(r.BasePath, id+ext)); err == nil {
+		if _, err := os.Stat(filepath.Join(r.BasePath, lookupID+ext)); err == nil {
 			return ext
 		}
 	}
 	return ".jpg"
+}
+
+func normalizeStorageID(id string) string {
+	id = strings.TrimSpace(id)
+	id = filepath.Base(id)
+	lower := strings.ToLower(id)
+	for _, ext := range imageformat.SupportedExtensions {
+		if strings.HasSuffix(lower, ext) {
+			return id[:len(id)-len(ext)]
+		}
+	}
+	return id
 }

@@ -344,7 +344,7 @@ func (a *Admin) handleUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Admin) handleDelete(w http.ResponseWriter, r *http.Request) {
-	id := mux.Vars(r)["id"]
+	id := normalizeImageID(mux.Vars(r)["id"])
 	if _, err := a.DB.Pool().Exec(r.Context(), `DELETE FROM images WHERE id = $1`, id); err != nil {
 		http.Redirect(w, r, "/admin/photos?error=Delete+failed", http.StatusFound)
 		return
@@ -355,6 +355,18 @@ func (a *Admin) handleDelete(w http.ResponseWriter, r *http.Request) {
 		os.Remove(filepath.Join(a.StoragePath, id+".jpg"))
 	}
 	http.Redirect(w, r, "/admin/photos?success=Photo+deleted", http.StatusFound)
+}
+
+func normalizeImageID(id string) string {
+	id = strings.TrimSpace(id)
+	id = filepath.Base(id)
+	lower := strings.ToLower(id)
+	for _, ext := range imageformat.SupportedExtensions {
+		if strings.HasSuffix(lower, ext) {
+			return id[:len(id)-len(ext)]
+		}
+	}
+	return id
 }
 
 func (a *Admin) handleUpdateTags(w http.ResponseWriter, r *http.Request) {

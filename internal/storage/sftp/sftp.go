@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/DMarby/picsum-photos/internal/storage"
@@ -68,10 +69,20 @@ func New(cfg Config) (*Provider, error) {
 	return &Provider{client: client, basePath: cfg.BasePath}, nil
 }
 
-// Get fetches the image bytes for the given id from the SFTP server, trying all supported extensions.
+// Get fetches the image bytes for the given id from the SFTP server.
+// The remote files are stored as <basePath>/<id>.jpg, but we still try the
+// other supported extensions as a fallback for older uploads.
 func (p *Provider) Get(ctx context.Context, id string) ([]byte, error) {
-	for _, ext := range imageformat.SupportedExtensions {
-		remotePath := path.Join(p.basePath, id+ext)
+	lookupID := normalizeStorageID(id)
+	candidates := append([]string{".jpg"}, imageformat.SupportedExtensions...)
+	seen := map[string]struct{}{}
+	for _, ext := range candidates {
+		if _, ok := seen[ext]; ok {
+			continue
+		}
+		seen[ext] = struct{}{}
+
+		remotePath := path.Join(p.basePath, lookupID+ext)
 		f, err := p.client.Open(remotePath)
 		if err != nil {
 			continue
@@ -97,7 +108,7 @@ func (p *Provider) PutWithExt(id, ext string, data []byte) error {
 	if ext == "" {
 		ext = ".jpg"
 	}
-	remotePath := path.Join(p.basePath, id+ext)
+	remotePath := path.Join(p.basePath, normalizeStorageID(id)+ext)
 
 	// Ensure base directory exists
 	_ = p.client.MkdirAll(p.basePath)
@@ -116,8 +127,9 @@ func (p *Provider) PutWithExt(id, ext string, data []byte) error {
 
 // Delete removes a file from the SFTP server (tries .jpg and .png).
 func (p *Provider) Delete(id string) error {
+	lookupID := normalizeStorageID(id)
 	for _, ext := range []string{".jpg", ".png"} {
-		p.client.Remove(path.Join(p.basePath, id+ext))
+		p.client.Remove(path.Join(p.basePath, lookupID+ext))
 	}
 	return nil
 }
@@ -125,4 +137,16 @@ func (p *Provider) Delete(id string) error {
 // Close shuts down the SFTP session.
 func (p *Provider) Close() {
 	p.client.Close()
+}
+
+func normalizeStorageID(id string) string {
+	id = strings.TrimSpace(id)
+	id = path.Base(id)
+	lower := strings.ToLower(id)
+	for _, ext := range imageformat.SupportedExtensions {
+		if strings.HasSuffix(lower, ext) {
+			return id[:len(id)-len(ext)]
+		}
+	}
+	return id
 }
