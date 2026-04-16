@@ -26,16 +26,12 @@ CREATE TABLE IF NOT EXISTS images (
 	filename TEXT NOT NULL DEFAULT '',
 	width    INTEGER NOT NULL DEFAULT 0,
 	height   INTEGER NOT NULL DEFAULT 0,
-	tags     TEXT[] NOT NULL DEFAULT '{}',
-	notes    TEXT NOT NULL DEFAULT '',
-	alt_text TEXT NOT NULL DEFAULT ''
+	tags     TEXT[] NOT NULL DEFAULT '{}'
 );
 
 -- Migrations for existing tables
 ALTER TABLE images ADD COLUMN IF NOT EXISTS tags     TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE images ADD COLUMN IF NOT EXISTS filename TEXT   NOT NULL DEFAULT '';
-ALTER TABLE images ADD COLUMN IF NOT EXISTS notes    TEXT   NOT NULL DEFAULT '';
-ALTER TABLE images ADD COLUMN IF NOT EXISTS alt_text TEXT   NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS seed_resolutions (
 	seed       TEXT NOT NULL,
@@ -375,10 +371,10 @@ func (p *Provider) ListDistinctAuthors(ctx context.Context) ([]string, error) {
 	return authors, nil
 }
 
-// ListAllWithTags returns images including their tags, filename, notes, and alt text (for admin use).
+// ListAllWithTags returns images including their tags, filename, and alt text (for admin use).
 func (p *Provider) ListAllWithTags(ctx context.Context) ([]ImageWithTags, error) {
 	rows, err := p.pool.Query(ctx,
-		`SELECT id, author, url, filename, width, height, tags, notes, alt_text FROM images ORDER BY id`)
+		`SELECT id, author, url, filename, width, height, tags, alt_text, notes FROM images ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -387,7 +383,7 @@ func (p *Provider) ListAllWithTags(ctx context.Context) ([]ImageWithTags, error)
 	var images []ImageWithTags
 	for rows.Next() {
 		img := ImageWithTags{}
-		if err := rows.Scan(&img.ID, &img.Author, &img.URL, &img.Filename, &img.Width, &img.Height, &img.Tags, &img.Notes, &img.AltText); err != nil {
+		if err := rows.Scan(&img.ID, &img.Author, &img.URL, &img.Filename, &img.Width, &img.Height, &img.Tags, &img.AltText, &img.Notes); err != nil {
 			return nil, err
 		}
 		images = append(images, img)
@@ -401,6 +397,7 @@ type ImageWithTags struct {
 	Tags     []string
 	Filename string
 	AltText  string
+	Notes    string
 }
 
 // NextID returns max(numeric id) + 1, or 1 if the table is empty.
