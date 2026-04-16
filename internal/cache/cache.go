@@ -33,9 +33,9 @@ func (a *Auto) Get(ctx context.Context, key string) (data []byte, err error) {
 
 	// Attempt to get the data from the cache
 	data, err = a.Provider.Get(ctx, key)
-	// Exit early if the error is nil as we got data from the cache
-	// Or if there's an error indicating that something went wrong
-	if err != ErrNotFound {
+	// Return immediately on a cache hit. Any cache-side error should still
+	// fall through to the loader so storage/SFTP remains the source of truth.
+	if err == nil {
 		return
 	}
 

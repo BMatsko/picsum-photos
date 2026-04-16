@@ -34,12 +34,14 @@ func TestAuto(t *testing.T) {
 
 	tests := []struct {
 		Key           string
+		ExpectedData  string
 		ExpectedError error
 	}{
-		{"foo", nil},
-		{"notfound", nil},
-		{"notfounderr", fmt.Errorf("notfounderr")},
-		{"seterror", fmt.Errorf("seterror")},
+		{"foo", "foo", nil},
+		{"notfound", "notfound", nil},
+		{"error", "notfound", nil},
+		{"notfounderr", "", fmt.Errorf("notfounderr")},
+		{"seterror", "", fmt.Errorf("seterror")},
 	}
 
 	for _, test := range tests {
@@ -58,9 +60,8 @@ func TestAuto(t *testing.T) {
 			continue
 		}
 
-		if string(data) != test.Key {
+		if string(data) != test.ExpectedData {
 			t.Errorf("%s: wrong data", test.Key)
 		}
 	}
-
 }
