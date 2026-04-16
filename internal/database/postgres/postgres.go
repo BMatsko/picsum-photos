@@ -396,6 +396,7 @@ type ImageWithTags struct {
 	database.Image
 	Tags     []string
 	Filename string
+	AltText  string
 }
 
 // NextID returns max(numeric id) + 1, or 1 if the table is empty.

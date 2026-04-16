@@ -5,7 +5,6 @@ RUN apk add --no-cache \
     gcc \
     musl-dev \
     vips-dev \
-    vips-webp \
     libheif-dev \
     git
 
