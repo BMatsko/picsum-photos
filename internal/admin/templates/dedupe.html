@@ -340,22 +340,25 @@ async function mergeGroup(idx) {
   card.style.opacity = '0.5';
   card.style.pointerEvents = 'none';
 
-  var failed = [];
-  for (var i = 0; i < loserIDs.length; i++) {
-    var loserID = loserIDs[i];
-    var form = new FormData();
-    form.append('winner', winnerID);
-    form.append('loser', loserID);
-    try {
-      var res = await fetch('/admin/dedupe/merge', { method: 'POST', body: form, credentials: 'same-origin' });
-      if (res.status === 204) {
-        delete hashCache[loserID];
-        allImages = allImages.filter(function(img){ return img.id !== loserID; });
-      } else { failed.push(loserID); }
-    } catch(e) { failed.push(loserID); }
-  }
+  try {
+    var res = await fetch('/admin/dedupe/merge', {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ winner: winnerID, losers: loserIDs })
+    });
 
-  if (failed.length === 0) {
+    if (res.status !== 204 && !res.ok) {
+      var msg = await res.text();
+      throw new Error(msg || ('Merge failed with status ' + res.status));
+    }
+
+    loserIDs.forEach(function(loserID) {
+      delete hashCache[loserID];
+      allImages = allImages.filter(function(img){ return img.id !== loserID; });
+    });
+
     card.style.border = '1px solid rgba(70,202,141,.4)';
     card.style.background = 'rgba(70,202,141,.04)';
     card.querySelector('.pair-header').innerHTML =
@@ -363,11 +366,12 @@ async function mergeGroup(idx) {
       loserIDs.length + ' image' + (loserIDs.length > 1 ? 's' : '') + ' into ID ' + winnerID + '</span>';
     card.querySelector('.pair-body').style.display = 'none';
     card.querySelector('.pair-actions').style.display = 'none';
-  } else {
-    card.style.opacity = '1'; card.style.pointerEvents = '';
-    alert('Merged ' + (loserIDs.length - failed.length) + ' of ' + loserIDs.length +
-      '. Failed IDs: ' + failed.join(', ') + '. Refresh and re-scan to retry.');
+  } catch (e) {
+    card.style.opacity = '1';
+    card.style.pointerEvents = '';
+    alert('Merge failed: ' + (e && e.message ? e.message : e));
   }
+
   var visible = document.querySelectorAll('.pair-card:not(.dismissed)').length;
   document.getElementById('pairCount').textContent = visible;
 }

@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"bytes"
 	"crypto/subtle"
 	"embed"
 	"encoding/json"
@@ -570,82 +571,153 @@ func (a *Admin) handleImagesForDedupe(w http.ResponseWriter, r *http.Request) {
 // - loser file deleted from storage
 // Returns 204 No Content on success for the AJAX merge flow.
 func (a *Admin) handleMerge(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Bad request", http.StatusBadRequest)
+	var winnerID string
+	var loserIDs []string
+
+	ct := r.Header.Get("Content-Type")
+	switch {
+	case strings.HasPrefix(ct, "application/json"):
+		var payload struct {
+			Winner string   `json:"winner"`
+			Loser  string   `json:"loser"`
+			Losers []string `json:"losers"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+		winnerID = strings.TrimSpace(payload.Winner)
+		if len(payload.Losers) > 0 {
+			loserIDs = append(loserIDs, payload.Losers...)
+		} else if payload.Loser != "" {
+			loserIDs = append(loserIDs, payload.Loser)
+		}
+	case strings.HasPrefix(ct, "multipart/form-data"):
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+		winnerID = strings.TrimSpace(r.FormValue("winner"))
+		if raw := strings.TrimSpace(r.FormValue("losers")); raw != "" {
+			for _, part := range strings.Split(raw, ",") {
+				if v := strings.TrimSpace(part); v != "" {
+					loserIDs = append(loserIDs, v)
+				}
+			}
+		} else if loser := strings.TrimSpace(r.FormValue("loser")); loser != "" {
+			loserIDs = append(loserIDs, loser)
+		}
+	default:
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+		winnerID = strings.TrimSpace(r.FormValue("winner"))
+		if raw := strings.TrimSpace(r.FormValue("losers")); raw != "" {
+			for _, part := range strings.Split(raw, ",") {
+				if v := strings.TrimSpace(part); v != "" {
+					loserIDs = append(loserIDs, v)
+				}
+			}
+		} else if loser := strings.TrimSpace(r.FormValue("loser")); loser != "" {
+			loserIDs = append(loserIDs, loser)
+		}
+	}
+
+	if winnerID == "" || len(loserIDs) == 0 {
+		http.Error(w, "Invalid IDs", http.StatusBadRequest)
 		return
 	}
-	winnerID := strings.TrimSpace(r.FormValue("winner"))
-	loserID := strings.TrimSpace(r.FormValue("loser"))
-	if winnerID == "" || loserID == "" || winnerID == loserID {
+
+	seen := map[string]bool{winnerID: true}
+	uniqLosers := make([]string, 0, len(loserIDs))
+	for _, loserID := range loserIDs {
+		if loserID == "" || seen[loserID] || loserID == winnerID {
+			continue
+		}
+		seen[loserID] = true
+		uniqLosers = append(uniqLosers, loserID)
+	}
+	if len(uniqLosers) == 0 {
 		http.Error(w, "Invalid IDs", http.StatusBadRequest)
 		return
 	}
 
 	ctx := r.Context()
+	tx, err := a.DB.Pool().Begin(ctx)
+	if err != nil {
+		http.Error(w, "Failed to begin transaction", http.StatusInternalServerError)
+		return
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 
-	// 1. Load both images via QueryRow so missing IDs fail immediately.
 	var winnerTags []string
-	if err := a.DB.Pool().QueryRow(ctx, `SELECT tags FROM images WHERE id = $1`, winnerID).Scan(&winnerTags); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT tags FROM images WHERE id = $1`, winnerID).Scan(&winnerTags); err != nil {
 		http.Error(w, "Winner not found", http.StatusNotFound)
 		return
 	}
 
-	var loserTags []string
-	if err := a.DB.Pool().QueryRow(ctx, `SELECT tags FROM images WHERE id = $1`, loserID).Scan(&loserTags); err != nil {
-		http.Error(w, "Loser not found", http.StatusNotFound)
-		return
+	mergedInput := append([]string{}, winnerTags...)
+	for _, loserID := range uniqLosers {
+		var loserTags []string
+		if err := tx.QueryRow(ctx, `SELECT tags FROM images WHERE id = $1`, loserID).Scan(&loserTags); err != nil {
+			http.Error(w, "Loser not found", http.StatusNotFound)
+			return
+		}
+		mergedInput = append(mergedInput, loserTags...)
 	}
 
-	// 2. Union tags and normalize them against the registry.
-	mergedTags := a.DB.ResolveTags(ctx, append(append([]string{}, winnerTags...), loserTags...))
+	mergedTags := a.DB.ResolveTags(ctx, mergedInput)
 	if mergedTags == nil {
 		mergedTags = []string{}
 	}
-	if mergedTags == nil {
-		mergedTags = []string{}
-	}
 
-	// 3. Write merged tags to winner.
-	if _, err := a.DB.Pool().Exec(ctx, `UPDATE images SET tags = $2 WHERE id = $1`, winnerID, mergedTags); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE images SET tags = $2 WHERE id = $1`, winnerID, mergedTags); err != nil {
 		http.Error(w, "Failed to update winner tags", http.StatusInternalServerError)
 		return
 	}
 
-	// 4. Rewrite seed_resolutions: loser → winner
-	// For any (seed, tag) that the loser owns but winner doesn't already have,
-	// update image_id to winner. Where there's a conflict (winner already has that slot),
-	// the winner's resolution takes precedence — just delete the loser's.
-	if _, err := a.DB.Pool().Exec(ctx,
-		`UPDATE seed_resolutions SET image_id = $1
-		 WHERE image_id = $2
-		 AND NOT EXISTS (
-		   SELECT 1 FROM seed_resolutions sr2
-		   WHERE sr2.seed = seed_resolutions.seed
-		   AND sr2.tag = seed_resolutions.tag
-		   AND sr2.image_id = $1
-		 )`,
-		winnerID, loserID); err != nil {
-		http.Error(w, "Failed to rewrite seeds", http.StatusInternalServerError)
+	for _, loserID := range uniqLosers {
+		if _, err := tx.Exec(ctx,
+			`UPDATE seed_resolutions SET image_id = $1
+			 WHERE image_id = $2
+			 AND NOT EXISTS (
+			   SELECT 1 FROM seed_resolutions sr2
+			   WHERE sr2.seed = seed_resolutions.seed
+			   AND sr2.tag = seed_resolutions.tag
+			   AND sr2.image_id = $1
+			 )`,
+			winnerID, loserID); err != nil {
+			http.Error(w, "Failed to rewrite seeds", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM images WHERE id = ANY($1)`, uniqLosers); err != nil {
+		http.Error(w, "Failed to delete losers", http.StatusInternalServerError)
 		return
 	}
 
-	// 5. Delete loser from DB (remaining seed_resolutions with loser will SET NULL via FK)
-	if _, err := a.DB.Pool().Exec(ctx, `DELETE FROM images WHERE id = $1`, loserID); err != nil {
-		http.Error(w, "Failed to delete loser", http.StatusInternalServerError)
+	if err := tx.Commit(ctx); err != nil {
+		http.Error(w, "Failed to commit merge", http.StatusInternalServerError)
 		return
 	}
 
-	// 6. Delete loser file from storage
 	if a.SFTP != nil {
-		_ = a.SFTP.Delete(loserID)
+		for _, loserID := range uniqLosers {
+			_ = a.SFTP.Delete(loserID)
+		}
 	} else {
-		for _, ext := range []string{".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif", ".avif", ".tiff", ".tif"} {
-			os.Remove(filepath.Join(a.StoragePath, loserID+ext))
+		for _, loserID := range uniqLosers {
+			for _, ext := range []string{".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif", ".avif", ".tiff", ".tif"} {
+				os.Remove(filepath.Join(a.StoragePath, loserID+ext))
+			}
 		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
 
 func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
@@ -790,9 +862,13 @@ func (a *Admin) handleImageList(w http.ResponseWriter, r *http.Request) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// render writes templates through a buffer so partial output is never sent if execution fails.
 func (a *Admin) render(w http.ResponseWriter, tmpl string, data any) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := a.templates.ExecuteTemplate(w, tmpl, data); err != nil {
-		http.Error(w, "Template error: "+err.Error(), 500)
+	var buf bytes.Buffer
+	if err := a.templates.ExecuteTemplate(&buf, tmpl, data); err != nil {
+		http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+		return
 	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(buf.Bytes())
 }

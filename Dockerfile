@@ -5,6 +5,7 @@ RUN apk add --no-cache \
     gcc \
     musl-dev \
     vips-dev \
+    vips-webp \
     libheif-dev \
     git
 
@@ -18,7 +19,7 @@ RUN go build -o /bin/picsum-photos ./cmd/picsum-photos
 # ─── Runtime stage ────────────────────────────────────────────────────────────
 FROM alpine:3.20
 
-RUN apk add --no-cache vips vips-heif
+RUN apk add --no-cache vips vips-webp vips-heif
 
 COPY --from=builder /bin/picsum-photos /bin/picsum-photos
 

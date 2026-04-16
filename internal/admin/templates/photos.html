@@ -3,39 +3,40 @@
 <script defer src="https://stats.brayden.me/script.js" data-website-id="809e57d9-ac37-41fc-96bd-9744c2cc96dd"></script>
 <style>
 /* ── Tag picklist ── */
-.tagpick-wrap { position:relative; }
+.tagpick-wrap { position:relative; width:100%; }
 .tagpick {
   display:flex; flex-wrap:wrap; gap:5px; align-items:center;
-  min-height:38px; padding:5px 8px;
-  border:1px solid var(--border); border-radius:4px;
-  background:var(--bg); cursor:text;
-  transition:border-color .15s;
+  width:100%; min-height:44px; padding:7px 10px;
+  box-sizing:border-box;
+  border:1px solid var(--border); border-radius:calc(var(--radius) - 2px);
+  background:#fff; cursor:text;
+  transition:border-color .15s, box-shadow .15s;
 }
-.tagpick:focus-within { border-color:#555; }
+.tagpick:focus-within { border-color:var(--blue); box-shadow:0 0 0 3px rgba(89,84,249,.12); }
 .tag-chip {
   display:inline-flex; align-items:center; gap:3px;
-  background:rgba(89,84,249,.1); color:#5954F9;
-  border:1px solid #2a5298;
-  border-radius:3px; padding:2px 6px 2px 8px;
+  background:rgba(89,84,249,.08); color:var(--blue);
+  border:1px solid rgba(89,84,249,.2);
+  border-radius:999px; padding:2px 7px 2px 9px;
   font-size:11px; font-weight:600; letter-spacing:.02em; white-space:nowrap;
 }
 .tag-chip button {
-  background:none; border:none; color:#5a9fd4;
+  background:none; border:none; color:inherit;
   cursor:pointer; font-size:14px; line-height:1;
   padding:0 0 0 2px; margin:0;
 }
-.tag-chip button:hover { color:#7eb8f7; }
+.tag-chip button:hover { color:var(--red); }
 .tagpick input[type=text] {
   border:none; outline:none; background:transparent;
   font-size:13px; color:var(--text);
-  min-width:100px; flex:1; padding:2px 0;
+  min-width:120px; flex:1; padding:2px 0;
 }
 .tag-suggestions {
   position:absolute; z-index:200;
-  background:#1a1a1a; border:1px solid #333;
-  border-radius:4px; box-shadow:0 6px 16px rgba(0,0,0,.5);
-  min-width:180px; max-height:200px; overflow-y:auto;
-  top:calc(100% + 4px); left:0;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:calc(var(--radius) - 2px); box-shadow:var(--shadow);
+  min-width:180px; max-height:220px; overflow-y:auto;
+  top:calc(100% + 4px); left:0; width:100%;
 }
 .tag-sug-item {
   padding:8px 12px; font-size:13px;
@@ -47,6 +48,14 @@
 }
 .tag-sug-new { font-style:italic; color:var(--muted); font-size:11px; }
 .tag-sug-item:hover .tag-sug-new, .tag-sug-item.active .tag-sug-new { color:#5a9fd4; }
+.photo-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:14px; align-items:start; }
+.photo-grid-meta { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+.photo-field { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.photo-field input[type=text], .photo-field input[type=number], .photo-field textarea { width:100%; box-sizing:border-box; }
+.photo-field .tagpick-wrap { width:100%; }
+.photo-field .tagpick { min-width:0; }
+.photo-field.span-2 { grid-column:1 / -1; }
+@media(max-width:768px){ .photo-grid { grid-template-columns:1fr; } .photo-grid-meta { grid-template-columns:1fr; } }
 </style>
 </head>
 <body>{{template "nav" .}}
@@ -61,44 +70,46 @@
 <div class="card">
   <h2>Upload a photo</h2>
   <form method="POST" action="/admin/photos/upload" enctype="multipart/form-data" id="uploadForm">
-    <div class="g3" style="margin-bottom:14px;">
-      <div class="frow">
+    <div class="photo-grid" style="margin-bottom:14px;">
+      <div class="photo-field">
         <label>ID <span style="color:#c0392b">*</span> <span id="idStatus" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;"></span></label>
         <input type="text" name="id" id="photoId" placeholder="Auto-filled…" required>
       </div>
-      <div class="frow">
+      <div class="photo-field">
         <label>Author <span style="color:#c0392b">*</span></label>
         <input type="text" name="author" id="photoAuthor" placeholder="e.g. Jane Doe" list="authorList" autocomplete="off" required>
       </div>
-      <div class="frow">
+      <div class="photo-field">
         <label>Source URL</label>
         <input type="text" name="url" id="photoUrl" placeholder="Auto-filled from filename…">
       </div>
     </div>
-    <div class="g3" style="margin-bottom:14px;">
-      <div class="frow">
+    <div class="photo-grid photo-grid-meta" style="margin-bottom:14px;">
+      <div class="photo-field">
         <label>Width (px) <span id="wStatus" style="color:var(--success-color);font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;"></span></label>
         <input type="number" name="width" id="photoW" placeholder="Auto-detected from file">
       </div>
-      <div class="frow">
+      <div class="photo-field">
         <label>Height (px) <span id="hStatus" style="color:var(--success-color);font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;"></span></label>
         <input type="number" name="height" id="photoH" placeholder="Auto-detected from file">
       </div>
-      <div class="frow">
+      <div class="photo-field span-2">
         <label>Tags</label>
-        <select id="uploadTagsSelect" multiple size="6" style="width:100%;min-height:150px;border:1px solid var(--border);border-radius:8px;padding:8px;background:#fff;"></select>
+        <div class="tagpick-wrap">
+          <div class="tagpick" id="uploadTagsPick"></div>
+        </div>
         <input type="hidden" name="tags" id="uploadTagsHidden">
       </div>
-      <div class="frow">
+      <div class="photo-field">
         <label>Alt text</label>
         <input type="text" name="alt_text" id="photoAltText" placeholder="Describe the image for screen readers…">
       </div>
-      <div class="frow">
+      <div class="photo-field">
         <label>Notes</label>
         <textarea name="notes" id="photoNotes" rows="3" placeholder="Internal notes about the image…"></textarea>
       </div>
     </div>
-    <div class="frow" style="margin-bottom:16px;">
+    <div class="photo-field" style="margin-bottom:16px;">
       <label>Image File <span style="color:#c0392b">*</span></label>
       <input type="file" name="photo" id="photoFile" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/avif,image/tiff,image/gif" required>
     </div>
@@ -108,26 +119,28 @@
 
 <div class="card" id="bulkCard">
   <h2>Bulk import</h2>
-  <div class="g3" style="margin-bottom:14px;">
-    <div class="frow">
+  <div class="photo-grid photo-grid-meta" style="margin-bottom:14px;">
+    <div class="photo-field">
       <label>Author <span style="color:#c0392b">*</span></label>
       <input type="text" id="bulkAuthor" placeholder="e.g. Jane Doe" list="authorList" autocomplete="off">
     </div>
-    <div class="frow">
+    <div class="photo-field span-2">
       <label>Tags <span style="color:var(--muted);font-weight:400;text-transform:none;font-size:11px;">(applied to all)</span></label>
-      <select id="bulkTagsSelect" multiple size="6" style="width:100%;min-height:150px;border:1px solid var(--border);border-radius:8px;padding:8px;background:#fff;"></select>
+      <div class="tagpick-wrap">
+        <div class="tagpick" id="bulkTagsPick"></div>
+      </div>
       <input type="hidden" id="bulkTagsHidden">
     </div>
-    <div class="frow">
+    <div class="photo-field">
       <label>Alt text</label>
       <input type="text" id="bulkAltText" placeholder="Describe the image for screen readers…">
     </div>
-    <div class="frow">
+    <div class="photo-field">
       <label>Notes</label>
       <textarea id="bulkNotes" rows="3" placeholder="Internal notes applied to all images…"></textarea>
     </div>
   </div>
-  <div class="frow" style="margin-bottom:16px;">
+  <div class="photo-field" style="margin-bottom:16px;">
     <label>Image Files <span style="color:#c0392b">*</span></label>
     <input type="file" id="bulkFiles" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/avif,image/tiff,image/gif" multiple>
   </div>
@@ -155,6 +168,7 @@
   <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
     <input type="text" id="filterPhotoId" placeholder="Filter by ID…" oninput="filterPhotos()" style="width:90px;">
     <input type="text" id="filterPhotoAuthor" placeholder="Filter by author…" oninput="filterPhotos()" style="flex:1;min-width:120px;">
+    <input type="text" id="filterPhotoFile" placeholder="Filter by filename…" oninput="filterPhotos()" style="flex:1;min-width:120px;">
     <input type="text" id="filterPhotoTag" placeholder="Filter by tag…" oninput="filterPhotos()" style="flex:1;min-width:100px;">
     <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="clearPhotoFilters()">Clear filters</button>
   </div>
@@ -163,7 +177,7 @@
     <tbody>
     {{range .Images}}
     <tr data-id="{{.ID}}" data-author="{{.Author}}" data-tags="{{join .Tags ","}}" data-filename="{{.Filename}}">
-      <td><img class="thumb" src="{{$.RootURL}}/id/{{.ID}}/112/76" alt="{{.AltText}}" loading="lazy" onerror="this.style.opacity=0.2"></td>
+      <td><img class="thumb" src="{{$.RootURL}}/id/{{.ID}}/112/76" alt="{{if .AltText}}{{.AltText}}{{else}}{{.Filename}}{{end}}" loading="lazy" onerror="this.style.opacity=0.2"></td>
       <td><code>{{.ID}}</code></td>
       <td>{{.Author}}</td>
       <td style="color:var(--muted);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{.Filename}}">{{if .Filename}}{{.Filename}}{{else}}<span style="color:var(--border);">—</span>{{end}}</td>
@@ -228,36 +242,20 @@ function clearPhotoFilters() {
 }
 
 // ── Meta: fetch existing tags + authors ───────────────────────────────────
-var registryTagNames = [], allAuthors = [];
+var registryTagNames = [], allTags = [], allAuthors = [];
 
 // Fetch meta to populate tag suggestions + author datalist
 // Picklists are initialized at bottom of script after function defs
+var uploadTagsPicker = new TagPicklist(document.getElementById('uploadTagsPick'), document.getElementById('uploadTagsHidden'), []);
+var bulkTagsPicker = new TagPicklist(document.getElementById('bulkTagsPick'), document.getElementById('bulkTagsHidden'), []);
+
 fetch('/admin/api/meta').then(r=>r.json()).then(d=>{
   registryTagNames = d.registryTags || [];
+  allTags = registryTagNames;
   allAuthors = d.authors || [];
   var dl = document.getElementById('authorList');
   allAuthors.forEach(function(a){ var o=document.createElement('option'); o.value=a; dl.appendChild(o); });
-  populateTagDropdown('uploadTagsSelect', 'uploadTagsHidden');
-  populateTagDropdown('bulkTagsSelect', 'bulkTagsHidden');
 });
-
-function populateTagDropdown(selectId, hiddenId) {
-  var select = document.getElementById(selectId);
-  var hidden = document.getElementById(hiddenId);
-  if (!select || !hidden) return;
-  select.innerHTML = '';
-  registryTagNames.forEach(function(tag) {
-    var option = document.createElement('option');
-    option.value = tag;
-    option.textContent = tag;
-    select.appendChild(option);
-  });
-  function sync() {
-    hidden.value = Array.from(select.selectedOptions).map(function(opt) { return opt.value; }).join(', ');
-  }
-  select.addEventListener('change', sync);
-  sync();
-}
 
 // ── Tag picklist component ────────────────────────────────────────────────
 function TagPicklist(container, hiddenInput, initialTags) {

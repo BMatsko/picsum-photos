@@ -371,10 +371,10 @@ func (p *Provider) ListDistinctAuthors(ctx context.Context) ([]string, error) {
 	return authors, nil
 }
 
-// ListAllWithTags returns images including their tags and filename (for admin use).
+// ListAllWithTags returns images including their tags, filename, and alt text (for admin use).
 func (p *Provider) ListAllWithTags(ctx context.Context) ([]ImageWithTags, error) {
 	rows, err := p.pool.Query(ctx,
-		`SELECT id, author, url, filename, width, height, tags FROM images ORDER BY id`)
+		`SELECT id, author, url, filename, width, height, tags, alt_text FROM images ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +383,7 @@ func (p *Provider) ListAllWithTags(ctx context.Context) ([]ImageWithTags, error)
 	var images []ImageWithTags
 	for rows.Next() {
 		img := ImageWithTags{}
-		if err := rows.Scan(&img.ID, &img.Author, &img.URL, &img.Filename, &img.Width, &img.Height, &img.Tags); err != nil {
+		if err := rows.Scan(&img.ID, &img.Author, &img.URL, &img.Filename, &img.Width, &img.Height, &img.Tags, &img.AltText); err != nil {
 			return nil, err
 		}
 		images = append(images, img)
