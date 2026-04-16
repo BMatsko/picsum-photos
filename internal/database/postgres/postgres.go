@@ -378,7 +378,7 @@ func (p *Provider) ListDistinctAuthors(ctx context.Context) ([]string, error) {
 // ListAllWithTags returns images including their tags, filename, notes, and alt text (for admin use).
 func (p *Provider) ListAllWithTags(ctx context.Context) ([]ImageWithTags, error) {
 	rows, err := p.pool.Query(ctx,
-		`SELECT id, author, url, filename, width, height, tags, alt_text FROM images ORDER BY id`)
+		`SELECT id, author, url, filename, width, height, tags, notes, alt_text FROM images ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
