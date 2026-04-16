@@ -105,6 +105,7 @@ func (a *Admin) Router() http.Handler {
 	r.HandleFunc("/admin/photos/upload", a.auth(a.handleUpload)).Methods("POST")
 	r.HandleFunc("/admin/photos/{id}/delete", a.auth(a.handleDelete)).Methods("POST")
 	r.HandleFunc("/admin/photos/{id}/tags", a.auth(a.handleUpdateTags)).Methods("POST")
+	r.HandleFunc("/admin/photos/{id}/metadata", a.auth(a.handleUpdateMetadata)).Methods("POST")
 	r.HandleFunc("/admin/seeds", a.auth(a.handleSeeds)).Methods("GET")
 	r.HandleFunc("/admin/seeds/clear", a.auth(a.handleClearSeed)).Methods("POST")
 	r.HandleFunc("/admin/seeds/clear-by-tag", a.auth(a.handleClearSeedsByTag)).Methods("POST")
@@ -253,6 +254,8 @@ func (a *Admin) handleUpload(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.FormValue("id"))
 	author := strings.TrimSpace(r.FormValue("author"))
 	imgURL := strings.TrimSpace(r.FormValue("url"))
+	notes := strings.TrimSpace(r.FormValue("notes"))
+	altText := strings.TrimSpace(r.FormValue("alt_text"))
 	tagsRaw := strings.TrimSpace(r.FormValue("tags"))
 
 	var width, height int
@@ -323,9 +326,9 @@ func (a *Admin) handleUpload(w http.ResponseWriter, r *http.Request) {
 	// Resolve tag aliases to canonical names before storing
 	tags = a.DB.ResolveTags(r.Context(), tags)
 	_, err = a.DB.Pool().Exec(r.Context(),
-		`INSERT INTO images (id, author, url, filename, width, height, tags) VALUES ($1,$2,$3,$4,$5,$6,$7)
-		 ON CONFLICT (id) DO UPDATE SET author=$2, url=$3, filename=$4, width=$5, height=$6, tags=$7`,
-		id, author, imgURL, filename, width, height, tags,
+		`INSERT INTO images (id, author, url, filename, width, height, tags, notes, alt_text) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		 ON CONFLICT (id) DO UPDATE SET author=$2, url=$3, filename=$4, width=$5, height=$6, tags=$7, notes=$8, alt_text=$9`,
+		id, author, imgURL, filename, width, height, tags, notes, altText,
 	)
 	if err != nil {
 		if a.SFTP != nil {
@@ -374,6 +377,20 @@ func (a *Admin) handleUpdateTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/admin/photos?success=Tags+updated", http.StatusFound)
+}
+
+func (a *Admin) handleUpdateMetadata(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	r.ParseForm()
+	notes := strings.TrimSpace(r.FormValue("notes"))
+	altText := strings.TrimSpace(r.FormValue("alt_text"))
+
+	if _, err := a.DB.Pool().Exec(r.Context(),
+		`UPDATE images SET notes = $1, alt_text = $2 WHERE id = $3`, notes, altText, id); err != nil {
+		http.Redirect(w, r, "/admin/photos?error=Metadata+update+failed", http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, "/admin/photos?success=Metadata+updated", http.StatusFound)
 }
 
 func (a *Admin) handleSeeds(w http.ResponseWriter, r *http.Request) {
@@ -551,49 +568,40 @@ func (a *Admin) handleImagesForDedupe(w http.ResponseWriter, r *http.Request) {
 // - all seed_resolutions pointing to loser rewritten to winner
 // - loser DB row deleted (cascades seed_resolutions)
 // - loser file deleted from storage
+// Returns 204 No Content on success for the AJAX merge flow.
 func (a *Admin) handleMerge(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, "/admin/dedupe?error=Bad+request", http.StatusFound)
+		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 	winnerID := strings.TrimSpace(r.FormValue("winner"))
 	loserID := strings.TrimSpace(r.FormValue("loser"))
 	if winnerID == "" || loserID == "" || winnerID == loserID {
-		http.Redirect(w, r, "/admin/dedupe?error=Invalid+IDs", http.StatusFound)
+		http.Error(w, "Invalid IDs", http.StatusBadRequest)
 		return
 	}
 
 	ctx := r.Context()
 
-	// 1. Load both images
-	winner, err := a.DB.Pool().Query(ctx, `SELECT tags FROM images WHERE id = $1`, winnerID)
-	if err != nil {
-		http.Redirect(w, r, "/admin/dedupe?error=Winner+not+found", http.StatusFound)
+	// 1. Load both images via QueryRow so missing IDs fail immediately.
+	var winnerTags []string
+	if err := a.DB.Pool().QueryRow(ctx, `SELECT tags FROM images WHERE id = $1`, winnerID).Scan(&winnerTags); err != nil {
+		http.Error(w, "Winner not found", http.StatusNotFound)
 		return
 	}
-	var winnerTags []string
-	if winner.Next() { winner.Scan(&winnerTags) }
-	winner.Close()
 
 	var loserTags []string
-	loserRow, err := a.DB.Pool().Query(ctx, `SELECT tags FROM images WHERE id = $1`, loserID)
-	if err == nil {
-		if loserRow.Next() { loserRow.Scan(&loserTags) }
-		loserRow.Close()
+	if err := a.DB.Pool().QueryRow(ctx, `SELECT tags FROM images WHERE id = $1`, loserID).Scan(&loserTags); err != nil {
+		http.Error(w, "Loser not found", http.StatusNotFound)
+		return
 	}
 
-	// 2. Union tags (lowercase, deduplicated)
-	tagSet := map[string]struct{}{}
-	for _, t := range winnerTags { tagSet[t] = struct{}{} }
-	for _, t := range loserTags { tagSet[t] = struct{}{} }
-	mergedTags := make([]string, 0, len(tagSet))
-	for t := range tagSet { mergedTags = append(mergedTags, t) }
-	sort.Strings(mergedTags)
+	// 2. Union tags and normalize them against the registry.
+	mergedTags := a.DB.ResolveTags(ctx, append(append([]string{}, winnerTags...), loserTags...))
 
-	// 3. Write merged tags to winner
-	_, err = a.DB.Pool().Exec(ctx, `UPDATE images SET tags = $2 WHERE id = $1`, winnerID, mergedTags)
-	if err != nil {
-		http.Redirect(w, r, "/admin/dedupe?error=Failed+to+update+winner+tags", http.StatusFound)
+	// 3. Write merged tags to winner.
+	if _, err := a.DB.Pool().Exec(ctx, `UPDATE images SET tags = $2 WHERE id = $1`, winnerID, mergedTags); err != nil {
+		http.Error(w, "Failed to update winner tags", http.StatusInternalServerError)
 		return
 	}
 
@@ -601,7 +609,7 @@ func (a *Admin) handleMerge(w http.ResponseWriter, r *http.Request) {
 	// For any (seed, tag) that the loser owns but winner doesn't already have,
 	// update image_id to winner. Where there's a conflict (winner already has that slot),
 	// the winner's resolution takes precedence — just delete the loser's.
-	_, err = a.DB.Pool().Exec(ctx,
+	if _, err := a.DB.Pool().Exec(ctx,
 		`UPDATE seed_resolutions SET image_id = $1
 		 WHERE image_id = $2
 		 AND NOT EXISTS (
@@ -610,15 +618,14 @@ func (a *Admin) handleMerge(w http.ResponseWriter, r *http.Request) {
 		   AND sr2.tag = seed_resolutions.tag
 		   AND sr2.image_id = $1
 		 )`,
-		winnerID, loserID)
-	if err != nil {
-		http.Redirect(w, r, "/admin/dedupe?error=Failed+to+rewrite+seeds", http.StatusFound)
+		winnerID, loserID); err != nil {
+		http.Error(w, "Failed to rewrite seeds", http.StatusInternalServerError)
 		return
 	}
 
 	// 5. Delete loser from DB (remaining seed_resolutions with loser will SET NULL via FK)
-	if _, err = a.DB.Pool().Exec(ctx, `DELETE FROM images WHERE id = $1`, loserID); err != nil {
-		http.Redirect(w, r, "/admin/dedupe?error=Failed+to+delete+loser", http.StatusFound)
+	if _, err := a.DB.Pool().Exec(ctx, `DELETE FROM images WHERE id = $1`, loserID); err != nil {
+		http.Error(w, "Failed to delete loser", http.StatusInternalServerError)
 		return
 	}
 
@@ -631,9 +638,7 @@ func (a *Admin) handleMerge(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	http.Redirect(w, r,
-		fmt.Sprintf("/admin/dedupe?success=Merged+%%23%s+into+%%23%s", loserID, winnerID),
-		http.StatusFound)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {
