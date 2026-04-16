@@ -598,6 +598,12 @@ func (a *Admin) handleMerge(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Union tags and normalize them against the registry.
 	mergedTags := a.DB.ResolveTags(ctx, append(append([]string{}, winnerTags...), loserTags...))
+	if mergedTags == nil {
+		mergedTags = []string{}
+	}
+	if mergedTags == nil {
+		mergedTags = []string{}
+	}
 
 	// 3. Write merged tags to winner.
 	if _, err := a.DB.Pool().Exec(ctx, `UPDATE images SET tags = $2 WHERE id = $1`, winnerID, mergedTags); err != nil {
@@ -757,7 +763,7 @@ func (a *Admin) handleMeta(w http.ResponseWriter, r *http.Request) {
 		authors = []string{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"tags": tags, "authors": authors})
+	json.NewEncoder(w).Encode(map[string]any{"registryTags": tags, "authors": authors})
 }
 
 // handleImageList returns a lightweight JSON list of all images for client-side duplicate detection.

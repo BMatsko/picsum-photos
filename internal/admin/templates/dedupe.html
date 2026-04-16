@@ -1,5 +1,6 @@
 {{define "dedupe.html"}}<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><title>Deduplicate — Brayden's Pic</title>{{template "style" .}}
+<script defer src="https://stats.brayden.me/script.js" data-website-id="809e57d9-ac37-41fc-96bd-9744c2cc96dd"></script>
 <style>
 .pair-card{background:var(--surface);border:1px solid rgba(253,0,68,.25);border-radius:var(--radius);margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow)}
 .pair-header{padding:10px 16px;background:rgba(253,0,68,.04);border-bottom:1px solid rgba(253,0,68,.12);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -346,8 +347,8 @@ async function mergeGroup(idx) {
     form.append('winner', winnerID);
     form.append('loser', loserID);
     try {
-      var res = await fetch('/admin/dedupe/merge', { method: 'POST', body: form });
-      if (res.status === 204 || res.ok) {
+      var res = await fetch('/admin/dedupe/merge', { method: 'POST', body: form, credentials: 'same-origin' });
+      if (res.status === 204) {
         delete hashCache[loserID];
         allImages = allImages.filter(function(img){ return img.id !== loserID; });
       } else { failed.push(loserID); }

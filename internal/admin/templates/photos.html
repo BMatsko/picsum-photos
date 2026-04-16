@@ -1,5 +1,6 @@
 {{define "photos.html"}}<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><title>Photos — Brayden's Pic</title>{{template "style" .}}
+<script defer src="https://stats.brayden.me/script.js" data-website-id="809e57d9-ac37-41fc-96bd-9744c2cc96dd"></script>
 <style>
 /* ── Tag picklist ── */
 .tagpick-wrap { position:relative; }
@@ -85,10 +86,16 @@
       </div>
       <div class="frow">
         <label>Tags</label>
-        <div class="tagpick-wrap">
-          <div class="tagpick" id="uploadTagPick" onclick="this.querySelector('input').focus()"></div>
-          <input type="hidden" name="tags" id="uploadTagsHidden">
-        </div>
+        <select id="uploadTagsSelect" multiple size="6" style="width:100%;min-height:150px;border:1px solid var(--border);border-radius:8px;padding:8px;background:#fff;"></select>
+        <input type="hidden" name="tags" id="uploadTagsHidden">
+      </div>
+      <div class="frow">
+        <label>Alt text</label>
+        <input type="text" name="alt_text" id="photoAltText" placeholder="Describe the image for screen readers…">
+      </div>
+      <div class="frow">
+        <label>Notes</label>
+        <textarea name="notes" id="photoNotes" rows="3" placeholder="Internal notes about the image…"></textarea>
       </div>
     </div>
     <div class="frow" style="margin-bottom:16px;">
@@ -101,7 +108,7 @@
 
 <div class="card" id="bulkCard">
   <h2>Bulk import</h2>
-  <div class="g2" style="margin-bottom:14px;">
+  <div class="g3" style="margin-bottom:14px;">
     <div class="frow">
       <label>Author <span style="color:#c0392b">*</span></label>
       <input type="text" id="bulkAuthor" placeholder="e.g. Jane Doe" list="authorList" autocomplete="off">
@@ -110,6 +117,14 @@
       <label>Tags <span style="color:var(--muted);font-weight:400;text-transform:none;font-size:11px;">(applied to all)</span></label>
       <select id="bulkTagsSelect" multiple size="6" style="width:100%;min-height:150px;border:1px solid var(--border);border-radius:8px;padding:8px;background:#fff;"></select>
       <input type="hidden" id="bulkTagsHidden">
+    </div>
+    <div class="frow">
+      <label>Alt text</label>
+      <input type="text" id="bulkAltText" placeholder="Describe the image for screen readers…">
+    </div>
+    <div class="frow">
+      <label>Notes</label>
+      <textarea id="bulkNotes" rows="3" placeholder="Internal notes applied to all images…"></textarea>
     </div>
   </div>
   <div class="frow" style="margin-bottom:16px;">
@@ -144,11 +159,11 @@
     <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="clearPhotoFilters()">Clear filters</button>
   </div>
   <div class="table-wrap"><table id="photoTable">
-    <thead><tr><th>Preview</th><th>ID</th><th>Author</th><th>Filename</th><th>Dimensions</th><th>Tags</th><th></th></tr></thead>
+    <thead><tr><th>Preview</th><th>ID</th><th>Author</th><th>Filename</th><th>Dimensions</th><th>Tags</th><th>Metadata</th><th></th></tr></thead>
     <tbody>
     {{range .Images}}
     <tr data-id="{{.ID}}" data-author="{{.Author}}" data-tags="{{join .Tags ","}}" data-filename="{{.Filename}}">
-      <td><img class="thumb" src="{{$.RootURL}}/id/{{.ID}}/112/76" alt="" loading="lazy" onerror="this.style.opacity=0.2"></td>
+      <td><img class="thumb" src="{{$.RootURL}}/id/{{.ID}}/112/76" alt="{{.AltText}}" loading="lazy" onerror="this.style.opacity=0.2"></td>
       <td><code>{{.ID}}</code></td>
       <td>{{.Author}}</td>
       <td style="color:var(--muted);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{.Filename}}">{{if .Filename}}{{.Filename}}{{else}}<span style="color:var(--border);">—</span>{{end}}</td>
@@ -160,6 +175,13 @@
             <input type="hidden" name="tags" class="row-tags-hidden" value="{{join .Tags ", "}}">
           </div>
           <button type="submit" class="btn btn-ghost" style="padding:5px 10px;font-size:12px;white-space:nowrap;">Save</button>
+        </form>
+      </td>
+      <td>
+        <form method="POST" action="/admin/photos/{{.ID}}/metadata" style="display:flex;flex-direction:column;gap:6px;min-width:220px;">
+          <input type="text" name="alt_text" value="{{.AltText}}" placeholder="Alt text" style="width:100%;">
+          <textarea name="notes" rows="2" placeholder="Notes" style="width:100%;resize:vertical;">{{.Notes}}</textarea>
+          <button type="submit" class="btn btn-ghost" style="padding:5px 10px;font-size:12px;white-space:nowrap;align-self:flex-start;">Save</button>
         </form>
       </td>
       <td>
@@ -206,15 +228,16 @@ function clearPhotoFilters() {
 }
 
 // ── Meta: fetch existing tags + authors ───────────────────────────────────
-var allTags = [], allAuthors = [];
+var registryTagNames = [], allAuthors = [];
 
 // Fetch meta to populate tag suggestions + author datalist
 // Picklists are initialized at bottom of script after function defs
 fetch('/admin/api/meta').then(r=>r.json()).then(d=>{
-  allTags = d.tags || [];
+  registryTagNames = d.registryTags || [];
   allAuthors = d.authors || [];
   var dl = document.getElementById('authorList');
   allAuthors.forEach(function(a){ var o=document.createElement('option'); o.value=a; dl.appendChild(o); });
+  populateTagDropdown('uploadTagsSelect', 'uploadTagsHidden');
   populateTagDropdown('bulkTagsSelect', 'bulkTagsHidden');
 });
 
@@ -223,7 +246,7 @@ function populateTagDropdown(selectId, hiddenId) {
   var hidden = document.getElementById(hiddenId);
   if (!select || !hidden) return;
   select.innerHTML = '';
-  allTags.forEach(function(tag) {
+  registryTagNames.forEach(function(tag) {
     var option = document.createElement('option');
     option.value = tag;
     option.textContent = tag;
@@ -346,13 +369,6 @@ function TagPicklist(container, hiddenInput, initialTags) {
 var picklistInstances = {};
 
 function initAllPicklists() {
-  // Single upload
-  picklistInstances['upload'] = new TagPicklist(
-    document.getElementById('uploadTagPick'),
-    document.getElementById('uploadTagsHidden'),
-    []
-  );
-
   // Per-row tag pickers in library
   document.querySelectorAll('.row-tag-form').forEach(function(form) {
     var id = form.dataset.id;
@@ -630,6 +646,8 @@ document.getElementById('bulkStart').addEventListener('click', async function() 
   document.getElementById('bulkAuthor').disabled = true;
 
   var tags = document.getElementById('bulkTagsHidden').value.trim();
+  var altText = document.getElementById('bulkAltText').value.trim();
+  var notes = document.getElementById('bulkNotes').value.trim();
   var ok = 0, fail = 0;
 
   for (var i = 0; i < bulkFiles.length; i++) {
@@ -651,6 +669,8 @@ document.getElementById('bulkStart').addEventListener('click', async function() 
     fd.append('author', author);
     fd.append('url', f.name);
     fd.append('tags', tags);
+    fd.append('alt_text', altText);
+    fd.append('notes', notes);
     fd.append('width', dim.w || 0);
     fd.append('height', dim.h || 0);
     fd.append('photo', f);
