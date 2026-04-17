@@ -46,7 +46,7 @@ var (
 	sftpPort      = flag.String("sftp-port", "22", "SFTP server port")
 	sftpUser      = flag.String("sftp-user", "", "SFTP username")
 	sftpPassword  = flag.String("sftp-password", "", "SFTP password")
-	sftpPath      = flag.String("sftp-path", "/images", "base path on SFTP server")
+	sftpPath      = flag.String("sftp-path", ".", "base path on SFTP server")
 	databaseURL   = flag.String("database-url", "", "postgres connection string (or set DATABASE_URL)")
 	hmacKey       = flag.String("hmac-key", "", "hmac key for signing image URLs")
 	adminPassword = flag.String("admin-password", "", "password for the admin UI (or set PICSUM_ADMIN_PASSWORD)")

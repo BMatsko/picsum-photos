@@ -38,6 +38,6 @@ EXPOSE 8080
 #   PICSUM_SFTP_PORT       — SFTP port (default: 22)
 #   PICSUM_SFTP_USER       — SFTP username
 #   PICSUM_SFTP_PASSWORD   — SFTP password
-#   PICSUM_SFTP_PATH       — base directory on server (default: /images)
+#   PICSUM_SFTP_PATH       — base directory on server (default: .)
 
 CMD ["/bin/picsum-photos"]
