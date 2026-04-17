@@ -7,6 +7,7 @@ import (
 	"math"
 
 	"github.com/DMarby/picsum-photos/internal/image"
+	imageformat "github.com/DMarby/picsum-photos/internal/storage/format"
 	"github.com/DMarby/picsum-photos/internal/logger"
 	"github.com/DMarby/picsum-photos/internal/queue"
 	"github.com/DMarby/picsum-photos/internal/tracing"
@@ -87,12 +88,15 @@ func taskProcessor(cache *image.Cache, tracer *tracing.Tracer) func(ctx context.
 		// Load source image directly by ID - no pre-scaled size variants needed
 		imageBuffer, err := cache.Get(ctx, task.ImageID)
 		if err != nil {
-			return nil, fmt.Errorf("error getting image from cache: %s", err)
+			return nil, fmt.Errorf("error getting image from cache: %w", err)
 		}
 
-		// GIF uses animated-aware resize to preserve all frames
+		sourceExt := imageformat.DetectExtension(imageBuffer)
+
+		// Animated source files need the animated loader even when the output
+		// format is a still image, otherwise libvips can fail during resize.
 		var processedImage *resizedImage
-		if task.OutputFormat == image.GIF {
+		if sourceExt == ".gif" || task.OutputFormat == image.GIF {
 			_, span := tracer.Start(ctx, "image.resizeAnimated")
 			var vipsImg vips.Image
 			vipsImg, err = vips.ResizeAnimated(imageBuffer, task.Width, task.Height)
