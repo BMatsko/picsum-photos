@@ -92,7 +92,23 @@ function updateButton (id, page_url) {
 
 function trackImageRetrieval (imageId) {
   if (window.umami && typeof window.umami.track === 'function') {
-    window.umami.track('image_retrieval', { id: imageId })
+    var eventData = {
+      id: imageId,
+      seed: imageId,
+      tags: []
+    }
+
+    if (image && typeof image === 'object') {
+      if (image.seed !== undefined && image.seed !== null) {
+        eventData.seed = image.seed
+      }
+
+      if (Array.isArray(image.tags)) {
+        eventData.tags = image.tags
+      }
+    }
+
+    window.umami.track('image_retrieval', eventData)
   }
 }
 
