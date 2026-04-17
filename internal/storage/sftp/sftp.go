@@ -85,7 +85,10 @@ func (p *Provider) Get(ctx context.Context, id string) ([]byte, error) {
 		remotePath := path.Join(p.basePath, lookupID+ext)
 		f, err := p.client.Open(remotePath)
 		if err != nil {
-			continue
+			if isNotFoundErr(err) {
+				continue
+			}
+			return nil, fmt.Errorf("sftp: open %s: %w", remotePath, err)
 		}
 		defer f.Close()
 		var buf bytes.Buffer
@@ -128,7 +131,7 @@ func (p *Provider) PutWithExt(id, ext string, data []byte) error {
 // Delete removes a file from the SFTP server (tries .jpg and .png).
 func (p *Provider) Delete(id string) error {
 	lookupID := normalizeStorageID(id)
-	for _, ext := range []string{".jpg", ".png"} {
+	for _, ext := range imageformat.SupportedExtensions {
 		p.client.Remove(path.Join(p.basePath, lookupID+ext))
 	}
 	return nil
@@ -137,6 +140,14 @@ func (p *Provider) Delete(id string) error {
 // Close shuts down the SFTP session.
 func (p *Provider) Close() {
 	p.client.Close()
+}
+
+func isNotFoundErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "no such file") || strings.Contains(lower, "not exist") || strings.Contains(lower, "does not exist")
 }
 
 func normalizeStorageID(id string) string {

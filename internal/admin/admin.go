@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html/template"
 	"image"
+	_ "image/gif"
 	_ "image/jpeg"
 	"io"
 	"net/http"
@@ -352,7 +353,9 @@ func (a *Admin) handleDelete(w http.ResponseWriter, r *http.Request) {
 	if a.SFTP != nil {
 		_ = a.SFTP.Delete(id)
 	} else {
-		os.Remove(filepath.Join(a.StoragePath, id+".jpg"))
+		for _, ext := range imageformat.SupportedExtensions {
+			os.Remove(filepath.Join(a.StoragePath, id+ext))
+		}
 	}
 	http.Redirect(w, r, "/admin/photos?success=Photo+deleted", http.StatusFound)
 }
@@ -721,7 +724,7 @@ func (a *Admin) handleMerge(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		for _, loserID := range uniqLosers {
-			for _, ext := range []string{".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif", ".avif", ".tiff", ".tif"} {
+			for _, ext := range imageformat.SupportedExtensions {
 				os.Remove(filepath.Join(a.StoragePath, loserID+ext))
 			}
 		}

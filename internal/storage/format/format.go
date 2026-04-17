@@ -5,7 +5,7 @@ package format
 import "strings"
 
 // All supported upload extensions, in order of lookup preference.
-var SupportedExtensions = []string{".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".avif", ".tiff", ".tif"}
+var SupportedExtensions = []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".avif", ".tiff", ".tif"}
 
 // DetectExtension inspects the first 16 bytes of file data and returns
 // the canonical storage extension (e.g. ".jpg", ".png", ".heic").
@@ -22,6 +22,11 @@ func DetectExtension(data []byte) string {
 	// PNG: 89 50 4E 47
 	if data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47 {
 		return ".png"
+	}
+	// GIF: 47 49 46 38 (GIF87a / GIF89a)
+	if len(data) >= 4 &&
+		data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x38 {
+		return ".gif"
 	}
 	// WebP: 52 49 46 46 .... 57 45 42 50
 	if len(data) >= 12 &&
