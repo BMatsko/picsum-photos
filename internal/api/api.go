@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"io/fs"
 	"net/http"
 	"time"
@@ -31,6 +32,9 @@ type API struct {
 
 // Utility methods for logging
 func (a *API) logError(r *http.Request, message string, err error) {
+	if err != nil {
+		message = fmt.Sprintf("%s: %v", message, err)
+	}
 	a.Log.Errorw(message, handler.LogFields(r, "error", err)...)
 }
 

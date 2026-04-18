@@ -2,6 +2,7 @@ package imageapi
 
 import (
 	"expvar"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -58,6 +59,9 @@ func NewAPI(imageProcessor image.Processor, log *logger.Logger, tracer *tracing.
 
 // Utility methods for logging
 func (a *API) logError(r *http.Request, message string, err error) {
+	if err != nil {
+		message = fmt.Sprintf("%s: %v", message, err)
+	}
 	a.Log.Errorw(message, handler.LogFields(r, "error", err)...)
 }
 
