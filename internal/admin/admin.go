@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"os"
 	"path/filepath"
 	"strings"
@@ -118,6 +119,7 @@ func (a *Admin) Router() http.Handler {
 	r.HandleFunc("/admin/apikeys/{id}/revoke", a.auth(a.handleRevokeAPIKey)).Methods("POST")
 	r.HandleFunc("/admin/dedupe", a.auth(a.handleDedupe)).Methods("GET")
 	r.HandleFunc("/admin/dedupe/merge", a.auth(a.handleMerge)).Methods("POST")
+	r.HandleFunc("/admin/dedupe/ignore", a.auth(a.handleIgnoreDedupePair)).Methods("POST")
 	r.HandleFunc("/admin/api/images-for-dedupe", a.auth(a.handleImagesForDedupe)).Methods("GET")
 	r.HandleFunc("/admin/tags", a.auth(a.handleTags)).Methods("GET")
 	r.HandleFunc("/admin/tags/create", a.auth(a.handleCreateTag)).Methods("POST")
@@ -235,15 +237,78 @@ func (a *Admin) handleDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Admin) handlePhotos(w http.ResponseWriter, r *http.Request) {
-	images, err := a.DB.ListAllWithTags(r.Context())
+	const pageSize = 24
+
+	page := 1
+	if raw := strings.TrimSpace(r.URL.Query().Get("page")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			page = n
+		}
+	}
+	layout := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("layout")))
+	if layout != "table" {
+		layout = "grid"
+	}
+
+	totalPhotos, err := a.DB.CountImages(r.Context())
 	if err != nil {
 		http.Error(w, "Database error", 500)
 		return
 	}
+	totalPages := 1
+	if totalPhotos > 0 {
+		totalPages = (totalPhotos + pageSize - 1) / pageSize
+	}
+	if page > totalPages {
+		page = totalPages
+	}
+	offset := (page - 1) * pageSize
+	images, err := a.DB.ListAllWithTagsPaginated(r.Context(), offset, pageSize)
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+
+	makePageURL := func(target int) string {
+		if target < 1 {
+			target = 1
+		}
+		if target > totalPages {
+			target = totalPages
+		}
+		q := url.Values{}
+		q.Set("page", strconv.Itoa(target))
+		q.Set("layout", layout)
+		return "/admin/photos?" + q.Encode()
+	}
+
+	start := 0
+	if totalPhotos > 0 {
+		start = offset + 1
+	}
+	end := offset + len(images)
+	if end > totalPhotos {
+		end = totalPhotos
+	}
+	if totalPhotos == 0 {
+		start = 0
+	}
+
 	a.render(w, "photos.html", map[string]any{
 		"Page": "photos", "Images": images, "RootURL": a.RootURL,
 		"Success": r.URL.Query().Get("success"),
 		"Error":   r.URL.Query().Get("error"),
+		"CurrentPage": page,
+		"TotalPages":  totalPages,
+		"TotalPhotos": totalPhotos,
+		"PageSize":    pageSize,
+		"StartPhoto":   start,
+		"EndPhoto":     end,
+		"Layout":       layout,
+		"PrevURL":      makePageURL(page - 1),
+		"NextURL":      makePageURL(page + 1),
+		"HasPrev":      page > 1,
+		"HasNext":      page < totalPages,
 	})
 }
 
@@ -575,8 +640,31 @@ func (a *Admin) handleImagesForDedupe(w http.ResponseWriter, r *http.Request) {
 		}
 		out[i] = entry{ID: img.ID, Author: img.Author, Width: img.Width, Height: img.Height, Tags: tags, URL: img.URL}
 	}
+	type ignoredPair struct {
+		A string `json:"a"`
+		B string `json:"b"`
+	}
+	rows, err := a.DB.Pool().Query(r.Context(), `SELECT image_a, image_b FROM dedupe_ignored_pairs ORDER BY created_at DESC`)
+	if err != nil {
+		jsonError(w, "db error", 500)
+		return
+	}
+	defer rows.Close()
+	ignored := []ignoredPair{}
+	for rows.Next() {
+		var p ignoredPair
+		if err := rows.Scan(&p.A, &p.B); err != nil {
+			jsonError(w, "db error", 500)
+			return
+		}
+		ignored = append(ignored, p)
+	}
+	if err := rows.Err(); err != nil {
+		jsonError(w, "db error", 500)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(out)
+	json.NewEncoder(w).Encode(map[string]any{"images": out, "ignoredPairs": ignored})
 }
 
 // handleMerge merges the loser image into the winner:
@@ -733,6 +821,49 @@ func (a *Admin) handleMerge(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+
+func (a *Admin) handleIgnoreDedupePair(w http.ResponseWriter, r *http.Request) {
+	var aID, bID string
+	ct := r.Header.Get("Content-Type")
+	switch {
+	case strings.HasPrefix(ct, "application/json"):
+		var payload struct {
+			A string `json:"a"`
+			B string `json:"b"`
+			ImageA string `json:"image_a"`
+			ImageB string `json:"image_b"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+		aID = strings.TrimSpace(payload.A)
+		bID = strings.TrimSpace(payload.B)
+		if aID == "" { aID = strings.TrimSpace(payload.ImageA) }
+		if bID == "" { bID = strings.TrimSpace(payload.ImageB) }
+	default:
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+		aID = strings.TrimSpace(r.FormValue("a"))
+		bID = strings.TrimSpace(r.FormValue("b"))
+		if aID == "" { aID = strings.TrimSpace(r.FormValue("image_a")) }
+		if bID == "" { bID = strings.TrimSpace(r.FormValue("image_b")) }
+	}
+	if aID == "" || bID == "" || aID == bID {
+		http.Error(w, "Invalid IDs", http.StatusBadRequest)
+		return
+	}
+	if aID > bID {
+		aID, bID = bID, aID
+	}
+	if _, err := a.DB.Pool().Exec(r.Context(), `INSERT INTO dedupe_ignored_pairs (image_a, image_b) VALUES ($1, $2) ON CONFLICT DO NOTHING`, aID, bID); err != nil {
+		http.Error(w, "Failed to save ignore", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
 
 func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
