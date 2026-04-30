@@ -56,6 +56,22 @@
 .photo-field .tagpick { min-width:0; }
 .photo-field.span-2 { grid-column:1 / -1; }
 @media(max-width:768px){ .photo-grid { grid-template-columns:1fr; } .photo-grid-meta { grid-template-columns:1fr; } }
+.photo-toolbar { display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:14px; }
+.photo-toolbar .meta { color:var(--muted);font-size:12px; }
+.photo-layout-switch { display:flex;align-items:center;gap:8px;flex-wrap:wrap; }
+.photo-gallery { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px; }
+.photo-card { border:1px solid var(--border); border-radius:var(--radius); background:#fff; padding:12px; display:flex; flex-direction:column; gap:10px; }
+.photo-card img { width:100%; aspect-ratio: 4 / 3; object-fit:cover; border-radius:10px; background:var(--border); display:block; }
+.photo-card-meta { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+.photo-card-meta .span-2 { grid-column:1 / -1; }
+.photo-card-label { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:700; margin-bottom:4px; }
+.photo-card-value { font-size:13px; color:var(--text); word-break:break-word; }
+.photo-card-actions { display:flex; flex-direction:column; gap:8px; }
+.photo-card-actions form { width:100%; }
+.photo-card-actions .tagpick { min-height:30px; padding:4px 6px; }
+.photo-pagination { display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px; }
+.photo-pagination .page-info { color:var(--muted);font-size:12px; }
+.photo-layout-hidden { display:none !important; }
 </style>
 </head>
 <body>{{template "nav" .}}
@@ -67,69 +83,19 @@
 {{if .Success}}<div class="alert alert-ok">{{.Success}}</div>{{end}}
 {{if .Error}}<div class="alert alert-err">{{.Error}}</div>{{end}}
 
-<div class="card">
-  <h2>Upload a photo</h2>
-  <form method="POST" action="/admin/photos/upload" enctype="multipart/form-data" id="uploadForm">
-    <div class="photo-grid" style="margin-bottom:14px;">
-      <div class="photo-field">
-        <label>ID <span style="color:#c0392b">*</span> <span id="idStatus" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;"></span></label>
-        <input type="text" name="id" id="photoId" placeholder="Auto-filled…" required>
-      </div>
-      <div class="photo-field">
-        <label>Author <span style="color:#c0392b">*</span></label>
-        <input type="text" name="author" id="photoAuthor" placeholder="e.g. Jane Doe" list="authorList" autocomplete="off" required>
-      </div>
-      <div class="photo-field">
-        <label>Source URL</label>
-        <input type="text" name="url" id="photoUrl" placeholder="Auto-filled from filename…">
-      </div>
-    </div>
-    <div class="photo-grid photo-grid-meta" style="margin-bottom:14px;">
-      <div class="photo-field">
-        <label>Width (px) <span id="wStatus" style="color:var(--success-color);font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;"></span></label>
-        <input type="number" name="width" id="photoW" placeholder="Auto-detected from file">
-      </div>
-      <div class="photo-field">
-        <label>Height (px) <span id="hStatus" style="color:var(--success-color);font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;"></span></label>
-        <input type="number" name="height" id="photoH" placeholder="Auto-detected from file">
-      </div>
-      <div class="photo-field span-2">
-        <label>Tags</label>
-        <div class="tagpick-wrap">
-          <div class="tagpick" id="uploadTagsPick"></div>
-        </div>
-        <input type="hidden" name="tags" id="uploadTagsHidden">
-      </div>
-      <div class="photo-field">
-        <label>Alt text</label>
-        <input type="text" name="alt_text" id="photoAltText" placeholder="Describe the image for screen readers…">
-      </div>
-      <div class="photo-field">
-        <label>Notes</label>
-        <textarea name="notes" id="photoNotes" rows="3" placeholder="Internal notes about the image…"></textarea>
-      </div>
-    </div>
-    <div class="photo-field" style="margin-bottom:16px;">
-      <label>Image File <span style="color:#c0392b">*</span></label>
-      <input type="file" name="photo" id="photoFile" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/avif,image/tiff,image/gif" required>
-    </div>
-    <button type="submit" class="btn btn-primary">Upload photo</button>
-  </form>
-</div>
-
 <div class="card" id="bulkCard">
-  <h2>Bulk import</h2>
+  <h2>Bulk upload</h2>
+  <p class="sub" style="margin-top:-6px;margin-bottom:14px;">Add files in batches, then upload everything when ready.</p>
   <div class="photo-grid photo-grid-meta" style="margin-bottom:14px;">
     <div class="photo-field">
       <label>Author <span style="color:#c0392b">*</span></label>
-      <input type="text" id="bulkAuthor" placeholder="e.g. Jane Doe" list="authorList" autocomplete="off">
+      <input type="text" id="bulkAuthor" placeholder="e.g. Jane Doe" list="authorList" autocomplete="off" required>
     </div>
     <div class="photo-field span-2">
-      <label>Tags <span style="color:var(--muted);font-weight:400;text-transform:none;font-size:11px;">(applied to all)</span></label>
-      <div class="tagpick-wrap">
-        <div class="tagpick" id="bulkTagsPick"></div>
-      </div>
+      <label>Tags <span style="color:var(--muted);font-weight:400;text-transform:none;font-size:11px;">(applied to all selected files)</span></label>
+      <select id="bulkTagsSelect" multiple size="6" style="width:100%;box-sizing:border-box;min-height:156px;"></select>
       <input type="hidden" id="bulkTagsHidden">
+      <div style="color:var(--muted);font-size:11px;margin-top:4px;">Choose one or more existing tags from the registry on the Tags page.</div>
     </div>
     <div class="photo-field">
       <label>Alt text</label>
@@ -140,9 +106,11 @@
       <textarea id="bulkNotes" rows="3" placeholder="Internal notes applied to all images…"></textarea>
     </div>
   </div>
-  <div class="photo-field" style="margin-bottom:16px;">
-    <label>Image Files <span style="color:#c0392b">*</span></label>
-    <input type="file" id="bulkFiles" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/avif,image/tiff,image/gif" multiple>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
+    <button type="button" class="btn btn-ghost" id="bulkAddFiles">Add files</button>
+    <button type="button" class="btn btn-ghost" id="bulkClearFiles" disabled>Clear queue</button>
+    <input type="file" id="bulkFiles" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/avif,image/tiff,image/gif" multiple style="display:none;">
+    <span style="color:var(--muted);font-size:12px;">You can add files in multiple batches before uploading.</span>
   </div>
 
   <div id="bulkQueue" style="display:none;margin-bottom:16px;">
@@ -151,8 +119,8 @@
     <div id="bulkSummary" style="display:none;margin-top:12px;font-size:13px;"></div>
   </div>
 
-  <div style="display:flex;gap:10px;align-items:center;">
-    <button class="btn btn-primary" id="bulkStart" disabled>Upload all</button>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <button type="button" class="btn btn-primary" id="bulkStart" disabled>Upload queued files</button>
     <span id="bulkStatus" style="font-size:12px;color:var(--muted);"></span>
   </div>
 </div>
@@ -161,76 +129,163 @@
 <datalist id="authorList"></datalist>
 
 <div class="card">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
-    <h2 style="margin-bottom:0;">Library (<span id="photoCount">{{len .Images}}</span> photos)</h2>
+  <div class="photo-toolbar">
+    <div>
+      <h2 style="margin-bottom:4px;">Library ({{.TotalPhotos}} photos)</h2>
+      <div class="meta">Showing {{if gt .TotalPhotos 0}}{{.StartPhoto}}–{{.EndPhoto}}{{else}}0{{end}} of {{.TotalPhotos}}</div>
+    </div>
+    <div class="photo-layout-switch">
+      <label style="font-size:12px;color:var(--muted);">Layout</label>
+      <select id="layoutSelect" onchange="setPhotoLayout(this.value)" style="min-width:120px;">
+        <option value="grid" {{if eq .Layout "grid"}}selected{{end}}>Grid</option>
+        <option value="table" {{if eq .Layout "table"}}selected{{end}}>Table</option>
+      </select>
+    </div>
   </div>
   {{if .Images}}
-  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">
     <input type="text" id="filterPhotoId" placeholder="Filter by ID…" oninput="filterPhotos()" style="width:90px;">
     <input type="text" id="filterPhotoAuthor" placeholder="Filter by author…" oninput="filterPhotos()" style="flex:1;min-width:120px;">
     <input type="text" id="filterPhotoFile" placeholder="Filter by filename…" oninput="filterPhotos()" style="flex:1;min-width:120px;">
     <input type="text" id="filterPhotoTag" placeholder="Filter by tag…" oninput="filterPhotos()" style="flex:1;min-width:100px;">
     <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="clearPhotoFilters()">Clear filters</button>
+    <span class="meta">Visible on this page: <span id="photoVisibleCount">{{len .Images}}</span></span>
   </div>
-  <div class="table-wrap"><table id="photoTable">
-    <thead><tr><th>Preview</th><th>ID</th><th>Author</th><th>Filename</th><th>Dimensions</th><th>Tags</th><th>Metadata</th><th></th></tr></thead>
-    <tbody>
+
+  <div id="photoGridView" class="photo-gallery {{if eq .Layout "table"}}photo-layout-hidden{{end}}">
     {{range .Images}}
-    <tr data-id="{{.ID}}" data-author="{{.Author}}" data-tags="{{join .Tags ","}}" data-filename="{{.Filename}}">
-      <td><img class="thumb" src="{{$.RootURL}}/id/{{.ID}}/112/76" alt="{{if .AltText}}{{.AltText}}{{else}}{{.Filename}}{{end}}" loading="lazy" onerror="this.style.opacity=0.2"></td>
-      <td><code>{{.ID}}</code></td>
-      <td>{{.Author}}</td>
-      <td style="color:var(--muted);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{.Filename}}">{{if .Filename}}{{.Filename}}{{else}}<span style="color:var(--border);">—</span>{{end}}</td>
-      <td style="color:var(--muted);font-size:12px;white-space:nowrap;">{{.Width}} × {{.Height}}</td>
-      <td>
-        <form method="POST" action="/admin/photos/{{.ID}}/tags" style="display:flex;gap:6px;align-items:center;" class="row-tag-form" data-id="{{.ID}}" data-tags="{{join .Tags ","}}">
-          <div class="tagpick-wrap" style="flex:1;">
+    <article class="photo-card photo-item" data-photo-item data-id="{{.ID}}" data-author="{{.Author}}" data-tags="{{join .Tags ","}}" data-filename="{{.Filename}}">
+      <img src="{{$.RootURL}}/id/{{.ID}}/300/225" alt="{{if .AltText}}{{.AltText}}{{else}}{{.Filename}}{{end}}" loading="lazy" onerror="this.style.opacity=0.2">
+      <div class="photo-card-meta">
+        <div>
+          <div class="photo-card-label">ID</div>
+          <div class="photo-card-value"><code>{{.ID}}</code></div>
+        </div>
+        <div>
+          <div class="photo-card-label">Author</div>
+          <div class="photo-card-value">{{.Author}}</div>
+        </div>
+        <div class="span-2">
+          <div class="photo-card-label">Filename</div>
+          <div class="photo-card-value" style="color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{{.Filename}}">{{if .Filename}}{{.Filename}}{{else}}<span style="color:var(--border);">—</span>{{end}}</div>
+        </div>
+        <div>
+          <div class="photo-card-label">Dimensions</div>
+          <div class="photo-card-value" style="color:var(--muted);font-size:12px;white-space:nowrap;">{{.Width}} × {{.Height}}</div>
+        </div>
+      </div>
+      <div class="photo-card-actions">
+        <form method="POST" action="/admin/photos/{{.ID}}/tags" class="row-tag-form" data-id="{{.ID}}" data-tags="{{join .Tags ","}}">
+          <div class="photo-card-label">Tags</div>
+          <div class="tagpick-wrap">
             <div class="tagpick row-tag-pick" style="min-height:30px;padding:4px 6px;" onclick="this.querySelector('input').focus()" data-id="{{.ID}}"></div>
             <input type="hidden" name="tags" class="row-tags-hidden" value="{{join .Tags ", "}}">
           </div>
-          <button type="submit" class="btn btn-ghost" style="padding:5px 10px;font-size:12px;white-space:nowrap;">Save</button>
+          <div style="display:flex;justify-content:flex-end;margin-top:6px;">
+            <button type="submit" class="btn btn-ghost" style="padding:5px 10px;font-size:12px;white-space:nowrap;">Save tags</button>
+          </div>
         </form>
-      </td>
-      <td>
-        <form method="POST" action="/admin/photos/{{.ID}}/metadata" style="display:flex;flex-direction:column;gap:6px;min-width:220px;">
+        <form method="POST" action="/admin/photos/{{.ID}}/metadata" style="display:flex;flex-direction:column;gap:6px;">
+          <div class="photo-card-label">Metadata</div>
           <input type="text" name="alt_text" value="{{.AltText}}" placeholder="Alt text" style="width:100%;">
           <textarea name="notes" rows="2" placeholder="Notes" style="width:100%;resize:vertical;">{{.Notes}}</textarea>
-          <button type="submit" class="btn btn-ghost" style="padding:5px 10px;font-size:12px;white-space:nowrap;align-self:flex-start;">Save</button>
+          <button type="submit" class="btn btn-ghost" style="padding:5px 10px;font-size:12px;white-space:nowrap;align-self:flex-start;">Save metadata</button>
         </form>
-      </td>
-      <td>
-        <form method="POST" action="/admin/photos/{{.ID}}/delete" onsubmit="return confirm('Delete photo {{.ID}}?')">
+        <form method="POST" action="/admin/photos/{{.ID}}/delete" onsubmit="return confirm('Delete photo {{.ID}}?')" style="align-self:flex-start;">
           <button type="submit" class="btn btn-danger">Delete</button>
         </form>
-      </td>
-    </tr>
+      </div>
+    </article>
     {{end}}
-    </tbody>
-  </table></div>
+  </div>
+
+  <div id="photoTableView" class="{{if eq .Layout "grid"}}photo-layout-hidden{{end}}">
+    <div class="table-wrap"><table id="photoTable">
+      <thead><tr><th>Preview</th><th>ID</th><th>Author</th><th>Filename</th><th>Dimensions</th><th>Tags</th><th>Metadata</th><th></th></tr></thead>
+      <tbody>
+      {{range .Images}}
+      <tr class="photo-item" data-photo-item data-id="{{.ID}}" data-author="{{.Author}}" data-tags="{{join .Tags ","}}" data-filename="{{.Filename}}">
+        <td><img class="thumb" src="{{$.RootURL}}/id/{{.ID}}/112/76" alt="{{if .AltText}}{{.AltText}}{{else}}{{.Filename}}{{end}}" loading="lazy" onerror="this.style.opacity=0.2"></td>
+        <td><code>{{.ID}}</code></td>
+        <td>{{.Author}}</td>
+        <td style="color:var(--muted);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{.Filename}}">{{if .Filename}}{{.Filename}}{{else}}<span style="color:var(--border);">—</span>{{end}}</td>
+        <td style="color:var(--muted);font-size:12px;white-space:nowrap;">{{.Width}} × {{.Height}}</td>
+        <td>
+          <form method="POST" action="/admin/photos/{{.ID}}/tags" style="display:flex;gap:6px;align-items:center;" class="row-tag-form" data-id="{{.ID}}" data-tags="{{join .Tags ","}}">
+            <div class="tagpick-wrap" style="flex:1;">
+              <div class="tagpick row-tag-pick" style="min-height:30px;padding:4px 6px;" onclick="this.querySelector('input').focus()" data-id="{{.ID}}"></div>
+              <input type="hidden" name="tags" class="row-tags-hidden" value="{{join .Tags ", "}}">
+            </div>
+            <button type="submit" class="btn btn-ghost" style="padding:5px 10px;font-size:12px;white-space:nowrap;">Save</button>
+          </form>
+        </td>
+        <td>
+          <form method="POST" action="/admin/photos/{{.ID}}/metadata" style="display:flex;flex-direction:column;gap:6px;min-width:220px;">
+            <input type="text" name="alt_text" value="{{.AltText}}" placeholder="Alt text" style="width:100%;">
+            <textarea name="notes" rows="2" placeholder="Notes" style="width:100%;resize:vertical;">{{.Notes}}</textarea>
+            <button type="submit" class="btn btn-ghost" style="padding:5px 10px;font-size:12px;white-space:nowrap;align-self:flex-start;">Save</button>
+          </form>
+        </td>
+        <td>
+          <form method="POST" action="/admin/photos/{{.ID}}/delete" onsubmit="return confirm('Delete photo {{.ID}}?')">
+            <button type="submit" class="btn btn-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table></div>
+  </div>
+
   <p id="photoNoResults" style="display:none;color:var(--muted);font-size:13px;margin-top:12px;">No photos match your filter.</p>
+
+  <div class="photo-pagination">
+    <a class="btn btn-ghost" href="{{.PrevURL}}" {{if not .HasPrev}}style="pointer-events:none;opacity:.5;"{{end}}>Previous</a>
+    <span class="page-info">Page {{.CurrentPage}} of {{.TotalPages}}</span>
+    <a class="btn btn-ghost" href="{{.NextURL}}" {{if not .HasNext}}style="pointer-events:none;opacity:.5;"{{end}}>Next</a>
+  </div>
   {{else}}
   <p style="color:var(--muted);font-size:13px;">No photos yet. Upload your first one above.</p>
   {{end}}
-</div>
-
-<script>
+</div><script>
 // ── Photo library filter ──────────────────────────────────────────────
+function getPhotoItems() {
+  return document.querySelectorAll('[data-photo-item]');
+}
+function setPhotoLayout(layout) {
+  var grid = document.getElementById('photoGridView');
+  var table = document.getElementById('photoTableView');
+  if (!grid || !table) return;
+  var selected = layout === 'table' ? 'table' : 'grid';
+  if (selected === 'table') {
+    grid.classList.add('photo-layout-hidden');
+    table.classList.remove('photo-layout-hidden');
+  } else {
+    grid.classList.remove('photo-layout-hidden');
+    table.classList.add('photo-layout-hidden');
+  }
+  var url = new URL(window.location.href);
+  url.searchParams.set('layout', selected);
+  window.history.replaceState({}, '', url.toString());
+}
 function filterPhotos() {
   var fId     = (document.getElementById('filterPhotoId').value     || '').toLowerCase();
   var fAuthor = (document.getElementById('filterPhotoAuthor').value || '').toLowerCase();
   var fFile   = (document.getElementById('filterPhotoFile').value   || '').toLowerCase();
   var fTag    = (document.getElementById('filterPhotoTag').value    || '').toLowerCase();
-  var rows = document.querySelectorAll('#photoTable tbody tr[data-id]');
+  var items = getPhotoItems();
   var visible = 0;
-  rows.forEach(function(row) {
-    var show = row.dataset.id.toLowerCase().includes(fId)
-      && row.dataset.author.toLowerCase().includes(fAuthor)
-      && (row.dataset.filename || '').toLowerCase().includes(fFile)
-      && row.dataset.tags.toLowerCase().includes(fTag);
-    row.style.display = show ? '' : 'none';
+  items.forEach(function(item) {
+    var tags = (item.dataset.tags || '').toLowerCase();
+    var show = item.dataset.id.toLowerCase().includes(fId)
+      && item.dataset.author.toLowerCase().includes(fAuthor)
+      && (item.dataset.filename || '').toLowerCase().includes(fFile)
+      && tags.includes(fTag);
+    item.style.display = show ? '' : 'none';
     if (show) visible++;
   });
-  document.getElementById('photoCount').textContent = visible;
+  var countEl = document.getElementById('photoVisibleCount');
+  if (countEl) countEl.textContent = visible;
   var nr = document.getElementById('photoNoResults');
   if (nr) nr.style.display = visible ? 'none' : 'block';
 }
@@ -243,11 +298,11 @@ function clearPhotoFilters() {
 
 // ── Meta: fetch existing tags + authors ───────────────────────────────────
 var registryTagNames = [], allTags = [], allAuthors = [];
+var bulkTagsPicker = null;
 
 // Fetch meta to populate tag suggestions + author datalist
 // Picklists are initialized at bottom of script after function defs
-var uploadTagsPicker = new TagPicklist(document.getElementById('uploadTagsPick'), document.getElementById('uploadTagsHidden'), []);
-var bulkTagsPicker = new TagPicklist(document.getElementById('bulkTagsPick'), document.getElementById('bulkTagsHidden'), []);
+bulkTagsPicker = new TagMultiSelect(document.getElementById('bulkTagsSelect'), document.getElementById('bulkTagsHidden'));
 
 fetch('/admin/api/meta').then(r=>r.json()).then(d=>{
   registryTagNames = d.registryTags || [];
@@ -255,7 +310,61 @@ fetch('/admin/api/meta').then(r=>r.json()).then(d=>{
   allAuthors = d.authors || [];
   var dl = document.getElementById('authorList');
   allAuthors.forEach(function(a){ var o=document.createElement('option'); o.value=a; dl.appendChild(o); });
+  if (bulkTagsPicker) bulkTagsPicker.refresh();
 });
+
+// ── Tag multi-select component ───────────────────────────────────────────
+function TagMultiSelect(selectEl, hiddenInput) {
+  var tags = [];
+
+  function sync() {
+    hiddenInput.value = tags.join(', ');
+  }
+
+  function render() {
+    Array.from(selectEl.options).forEach(function(opt) {
+      opt.selected = tags.indexOf(opt.value) !== -1;
+    });
+    sync();
+  }
+
+  function populate() {
+    var preserve = tags.slice();
+    selectEl.innerHTML = '';
+    registryTagNames.forEach(function(tag) {
+      var opt = document.createElement('option');
+      opt.value = tag;
+      opt.textContent = tag;
+      opt.selected = preserve.indexOf(tag) !== -1;
+      selectEl.appendChild(opt);
+    });
+    preserve.forEach(function(tag) {
+      if (registryTagNames.indexOf(tag) !== -1) return;
+      var opt = document.createElement('option');
+      opt.value = tag;
+      opt.textContent = tag;
+      opt.selected = true;
+      selectEl.appendChild(opt);
+    });
+    render();
+  }
+
+  selectEl.addEventListener('change', function() {
+    tags = Array.from(selectEl.selectedOptions).map(function(opt) { return opt.value; });
+    sync();
+  });
+
+  populate();
+
+  return {
+    refresh: populate,
+    getTags: function() { return tags.slice(); },
+    setTags: function(nextTags) {
+      tags = (nextTags || []).map(function(t) { return t.trim(); }).filter(Boolean);
+      populate();
+    }
+  };
+}
 
 // ── Tag picklist component ────────────────────────────────────────────────
 function TagPicklist(container, hiddenInput, initialTags) {
@@ -382,16 +491,7 @@ function initAllPicklists() {
 // Init picklists now that all functions are defined
 initAllPicklists();
 
-// ── Single upload: auto-fill ID + dimensions ──────────────────────────────
-function refreshNextId() {
-  fetch('/admin/api/next-id').then(r=>r.json()).then(d=>{
-    var el = document.getElementById('photoId');
-    el.value = d.next_id;
-    document.getElementById('idStatus').textContent = '(auto-filled)';
-  });
-}
-refreshNextId();
-
+// ── Bulk upload staging ───────────────────────────────────────────────────
 function readImageDimensions(file) {
   return new Promise(resolve => {
     var reader = new FileReader();
@@ -405,224 +505,46 @@ function readImageDimensions(file) {
   });
 }
 
-document.getElementById('photoFile').addEventListener('change', async function(e) {
-  var file = e.target.files[0];
-  if (!file) return;
-  var urlEl = document.getElementById('photoUrl');
-  if (!urlEl.value) urlEl.value = file.name;
-  var dim = await readImageDimensions(file);
-  if (dim.w) {
-    document.getElementById('photoW').value = dim.w;
-    document.getElementById('photoH').value = dim.h;
-    document.getElementById('wStatus').textContent = '(detected)';
-    document.getElementById('hStatus').textContent = '(detected)';
-  }
-});
+var bulkEntries = [];
+var bulkExistingImages = null;
+var bulkFileInput = document.getElementById('bulkFiles');
+var bulkAddFilesBtn = document.getElementById('bulkAddFiles');
+var bulkClearFilesBtn = document.getElementById('bulkClearFiles');
+var bulkStartBtn = document.getElementById('bulkStart');
+var bulkQueueEl = document.getElementById('bulkQueue');
+var bulkRowsEl = document.getElementById('bulkRows');
+var bulkSummaryEl = document.getElementById('bulkSummary');
+var bulkStatusEl = document.getElementById('bulkStatus');
+var bulkAuthorEl = document.getElementById('bulkAuthor');
 
-// ── Bulk import ────────────────────────────────────────────────────────────
-var bulkFiles = [];
-var bulkDupes = [];
-
-// ── Perceptual hashing (aHash 16×16) ─────────────────────────────────────
-var _hashCanvas = document.createElement('canvas');
-_hashCanvas.width = _hashCanvas.height = 16;
-var _hashCtx = _hashCanvas.getContext('2d', {willReadFrequently: true});
-
-// Compute a 256-bit average hash from an image element or data URL
-function computeAHash(src) {
-  return new Promise(function(resolve) {
-    function hash(imgEl) {
-      _hashCtx.drawImage(imgEl, 0, 0, 16, 16);
-      var pixels = _hashCtx.getImageData(0, 0, 16, 16).data;
-      // Convert to grayscale
-      var gray = new Array(256);
-      var sum = 0;
-      for (var i = 0; i < 256; i++) {
-        var p = i * 4;
-        gray[i] = pixels[p] * 0.299 + pixels[p+1] * 0.587 + pixels[p+2] * 0.114;
-        sum += gray[i];
-      }
-      var mean = sum / 256;
-      // Build bit array (1 if above mean)
-      var bits = new Uint8Array(256);
-      for (var j = 0; j < 256; j++) bits[j] = gray[j] >= mean ? 1 : 0;
-      resolve(bits);
-    }
-    if (typeof src === 'string') {
-      var img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = function() { hash(img); };
-      img.onerror = function() { resolve(null); };
-      img.src = src;
-    } else {
-      hash(src);
-    }
-  });
+function getActiveBulkEntries() {
+  return bulkEntries.filter(function(entry){ return !entry.removed; });
 }
 
-// Hamming similarity: 0.0 (totally different) to 1.0 (identical)
-function hammingSimilarity(h1, h2) {
-  if (!h1 || !h2) return 0;
-  var same = 0;
-  for (var i = 0; i < 256; i++) if (h1[i] === h2[i]) same++;
-  return same / 256;
-}
-
-// Returns a candidate match {match, id, author, similarity} only if visual similarity >= threshold
-// Falls back to metadata-only match with similarity=null if the image can’t be loaded
-async function checkDuplicate(file, dim, fileDataURL, existingImages, rootURL) {
-  var nameLower = file.name.toLowerCase();
-  var THRESHOLD = 0.90;
-
-  // Compute hash of the incoming file
-  var fileHash = null;
-  if (fileDataURL) {
-    var img = new Image();
-    img.src = fileDataURL;
-    await new Promise(function(r){ img.onload=r; img.onerror=r; });
-    fileHash = await computeAHash(img);
-  }
-
-  for (var j = 0; j < existingImages.length; j++) {
-    var ex = existingImages[j];
-    var isCandidate = (ex.url && ex.url.toLowerCase() === nameLower) ||
-                     (dim.w && ex.width === dim.w && ex.height === dim.h);
-    if (!isCandidate) continue;
-
-    var matchType = (ex.url && ex.url.toLowerCase() === nameLower) ? 'filename' : 'dimensions';
-
-    // Load existing image thumbnail and compare hashes
-    if (fileHash) {
-      var thumbURL = rootURL + '/id/' + ex.id + '/64/64';
-      var existingHash = await computeAHash(thumbURL);
-      var sim = hammingSimilarity(fileHash, existingHash);
-      if (sim >= THRESHOLD) {
-        return {match: matchType, id: ex.id, author: ex.author, similarity: Math.round(sim * 100)};
-      }
-      // Visual check failed — not flagged
-      continue;
-    }
-
-    // Couldn’t compute hashes (e.g. non-image file) — fall back to metadata match
-    return {match: matchType, id: ex.id, author: ex.author, similarity: null};
-  }
-  return null;
-}
-
-document.getElementById('bulkFiles').addEventListener('change', async function(e) {
-  bulkFiles = Array.from(e.target.files);
-  bulkDupes = [];
-  var rows = document.getElementById('bulkRows');
-  rows.innerHTML = '';
-  document.getElementById('bulkSummary').style.display = 'none';
-
-  if (!bulkFiles.length) {
-    document.getElementById('bulkQueue').style.display = 'none';
-    document.getElementById('bulkStart').disabled = true;
-    return;
-  }
-
-  document.getElementById('bulkQueue').style.display = 'block';
-  document.getElementById('bulkStart').disabled = false;
-  document.getElementById('bulkStatus').textContent = 'Checking for duplicates…';
-
-  var existingImages = [];
-  try { var res = await fetch('/admin/api/images'); existingImages = await res.json(); } catch(e) {}
-
-  var rootURL = '{{.RootURL}}';
-
-  var dupeCount = 0;
-  for (var i = 0; i < bulkFiles.length; i++) {
-    var f = bulkFiles[i];
-    var dim = await readImageDimensions(f);
-    // Get data URL for perceptual hash comparison
-    var fileDataURL = await new Promise(function(resolve) {
-      var r = new FileReader();
-      r.onload = function(e){ resolve(e.target.result); };
-      r.onerror = function(){ resolve(null); };
-      r.readAsDataURL(f);
-    });
-    document.getElementById('bulkStatus').textContent = 'Checking ' + (i+1) + ' of ' + bulkFiles.length + '…';
-    var dupe = await checkDuplicate(f, dim, fileDataURL, existingImages, rootURL);
-    bulkDupes[i] = dupe;
-    if (dupe) dupeCount++;
-
-    var row = document.createElement('div');
-    row.id = 'bulk-row-' + i;
-
-    if (dupe) {
-      // Side-by-side comparison card for duplicates
-      var previewURL = URL.createObjectURL(f);
-      var matchLabel = dupe.match === 'filename' ? 'same filename' : 'same dimensions';
-      var existingThumb = '{{.RootURL}}/id/' + dupe.id + '/160/120';
-      row.style.cssText = 'border:1px solid rgba(253,0,68,.25);border-radius:10px;margin-bottom:8px;background:#fff;overflow:hidden;';
-      row.innerHTML =
-        '<div style="padding:10px 14px 8px;display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid rgba(253,0,68,.1);">' +
-          '<div style="display:flex;align-items:center;gap:8px;">' +
-            '<span style="font-size:11px;font-weight:700;background:rgba(253,0,68,.1);color:#fd0044;border-radius:4px;padding:2px 7px;">Possible duplicate</span>' +
-            '<span style="font-size:12px;color:var(--muted);">'+matchLabel+'</span>' +
-            (dupe.similarity !== null ? '<span style="font-size:11px;font-weight:700;background:rgba(253,0,68,.08);color:#fd0044;border-radius:4px;padding:2px 7px;">'+dupe.similarity+'% visual match</span>' : '') +
-          '</div>' +
-          '<div style="display:flex;align-items:center;gap:8px;">' +
-            '<span id="bulk-status-'+i+'" style="font-size:12px;font-weight:600;color:#fd0044;">Flagged</span>' +
-            '<button type="button" onclick="removeFromQueue('+i+')" style="font-size:12px;padding:4px 10px;background:transparent;border:1px solid #fd0044;color:#fd0044;border-radius:6px;cursor:pointer;font-weight:600;white-space:nowrap;">Remove</button>' +
-          '</div>' +
-        '</div>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;">' +
-          '<div style="padding:12px;border-right:1px solid var(--border);">' +
-            '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px;">New upload</div>' +
-            '<img src="'+previewURL+'" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;background:var(--border);display:block;">' +
-            '<div style="margin-top:6px;font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+f.name+'">'+f.name+'</div>' +
-            '<div style="font-size:11px;color:var(--muted);">'+dim.w+'×'+dim.h+' &nbsp;·&nbsp; '+(f.size/1024/1024).toFixed(1)+' MB</div>' +
-          '</div>' +
-          '<div style="padding:12px;">' +
-            '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px;">In library (ID '+dupe.id+')</div>' +
-            '<img src="'+existingThumb+'" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;background:var(--border);display:block;">' +
-            '<div style="margin-top:6px;font-size:11px;color:var(--text);">'+dupe.author+'</div>' +
-            '<div style="font-size:11px;color:var(--muted);">'+matchLabel+'</div>' +
-          '</div>' +
-        '</div>';
-    } else {
-      // Normal compact row for clean files
-      row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 12px;border-radius:8px;margin-bottom:4px;background:var(--bg);border:1px solid var(--border);font-size:12px;';
-      row.innerHTML =
-        '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);" title="'+f.name+'">'+f.name+'</span>' +
-        '<span style="color:var(--muted);white-space:nowrap;">'+dim.w+'×'+dim.h+'</span>' +
-        '<span style="color:var(--muted);white-space:nowrap;">'+(f.size/1024/1024).toFixed(1)+' MB</span>' +
-        '<span id="bulk-status-'+i+'" style="min-width:70px;text-align:right;font-weight:600;color:var(--muted);">Pending</span>';
-    }
-    rows.appendChild(row);
-  }
-
-  var statusMsg = bulkFiles.length + ' file' + (bulkFiles.length>1?'s':'') + ' selected';
-  if (dupeCount > 0) statusMsg += ' — ' + dupeCount + ' possible duplicate' + (dupeCount>1?'s':'') + ' flagged';
-  document.getElementById('bulkStatus').textContent = statusMsg;
-
+function updateBulkDuplicateBanner() {
+  var activeDupes = getActiveBulkEntries().filter(function(entry){ return entry.dupe; });
   var existing = document.getElementById('bulkDupeBanner');
   if (existing) existing.remove();
-  if (dupeCount > 0) {
-    var banner = document.createElement('div');
-    banner.id = 'bulkDupeBanner';
-    banner.style.cssText = 'padding:10px 14px;border-radius:4px;margin-bottom:12px;font-size:12px;background:rgba(230,180,0,.08);border:1px solid rgba(230,180,0,.35);color:#e6b400;display:flex;gap:10px;align-items:center;';
-    banner.innerHTML = '<span>&#9888;</span><span>'+dupeCount+' possible duplicate'+(dupeCount>1?'s':'')+' found. Review the side-by-side comparison below and click <strong>Remove</strong> to exclude any from the upload.</span>';
-    document.getElementById('bulkRows').before(banner);
-  }
-});
+  if (!activeDupes.length) return;
+  var banner = document.createElement('div');
+  banner.id = 'bulkDupeBanner';
+  banner.style.cssText = 'padding:10px 14px;border-radius:4px;margin-bottom:12px;font-size:12px;background:rgba(230,180,0,.08);border:1px solid rgba(230,180,0,.35);color:#e6b400;display:flex;gap:10px;align-items:center;';
+  banner.innerHTML = '<span>&#9888;</span><span>'+activeDupes.length+' possible duplicate'+(activeDupes.length>1?'s':'')+' found. Review the queue below and click <strong>Remove</strong> to exclude any from the upload.</span>';
+  bulkRowsEl.before(banner);
+}
 
-function removeFromQueue(i) {
-  bulkFiles[i] = null; // null = removed
-  var row = document.getElementById('bulk-row-' + i);
-  if (row) {
-    row.style.opacity = '0.4';
-    row.style.pointerEvents = 'none';
-    var btn = row.querySelector('button[onclick]');
-    if (btn) btn.remove();
-    var statusEl = document.getElementById('bulk-status-' + i);
-    if (statusEl) { statusEl.textContent = 'Removed'; statusEl.style.color = 'var(--muted)'; }
+function updateBulkControls(message) {
+  var activeCount = getActiveBulkEntries().length;
+  var author = bulkAuthorEl.value.trim();
+  bulkQueueEl.style.display = activeCount ? 'block' : 'none';
+  bulkClearFilesBtn.disabled = !activeCount;
+  bulkStartBtn.disabled = !activeCount || !author;
+  if (message) {
+    bulkStatusEl.textContent = message;
+  } else {
+    bulkStatusEl.textContent = activeCount + ' file' + (activeCount === 1 ? '' : 's') + ' queued';
   }
-  // Update the count in status bar
-  var remaining = bulkFiles.filter(function(f){return f!==null;}).length;
-  document.getElementById('bulkStatus').textContent = remaining + ' file' + (remaining===1?'':'s') + ' queued';
+  updateBulkDuplicateBanner();
 }
 
 function setRowStatus(i, text, color) {
@@ -632,68 +554,204 @@ function setRowStatus(i, text, color) {
   if (row) row.style.borderColor = color === 'var(--success-color)' ? 'rgba(39,174,96,.35)' : color === '#e74c3c' ? 'rgba(192,57,43,.35)' : 'var(--border)';
 }
 
-document.getElementById('bulkStart').addEventListener('click', async function() {
-  var author = document.getElementById('bulkAuthor').value.trim();
-  if (!author) { alert('Author is required for bulk import.'); return; }
-  if (!bulkFiles.length) return;
+function removeFromQueue(i) {
+  if (!bulkEntries[i]) return;
+  bulkEntries[i].removed = true;
+  var row = document.getElementById('bulk-row-' + i);
+  if (row) {
+    row.style.opacity = '0.4';
+    row.style.pointerEvents = 'none';
+    var btn = row.querySelector('button[data-remove]');
+    if (btn) btn.remove();
+    var statusEl = document.getElementById('bulk-status-' + i);
+    if (statusEl) { statusEl.textContent = 'Removed'; statusEl.style.color = 'var(--muted)'; }
+  }
+  updateBulkControls();
+}
 
-  var btn = document.getElementById('bulkStart');
+function clearBulkQueue() {
+  bulkEntries = [];
+  bulkRowsEl.innerHTML = '';
+  var banner = document.getElementById('bulkDupeBanner');
+  if (banner) banner.remove();
+  bulkSummaryEl.style.display = 'none';
+  updateBulkControls('Queue cleared');
+}
+
+async function loadBulkExistingImages() {
+  if (bulkExistingImages) return bulkExistingImages;
+  try {
+    var res = await fetch('/admin/api/images');
+    bulkExistingImages = await res.json();
+  } catch (e) {
+    bulkExistingImages = [];
+  }
+  return bulkExistingImages;
+}
+
+function renderBulkRow(entry, index) {
+  var row = document.createElement('div');
+  row.id = 'bulk-row-' + index;
+
+  if (entry.dupe) {
+    var previewURL = URL.createObjectURL(entry.file);
+    var matchLabel = entry.dupe.match === 'filename' ? 'same filename' : 'same dimensions';
+    var existingThumb = '{{.RootURL}}/id/' + entry.dupe.id + '/160/120';
+    row.style.cssText = 'border:1px solid rgba(253,0,68,.25);border-radius:10px;margin-bottom:8px;background:#fff;overflow:hidden;';
+    row.innerHTML =
+      '<div style="padding:10px 14px 8px;display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid rgba(253,0,68,.1);">' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+          '<span style="font-size:11px;font-weight:700;background:rgba(253,0,68,.1);color:#fd0044;border-radius:4px;padding:2px 7px;">Possible duplicate</span>' +
+          '<span style="font-size:12px;color:var(--muted);">'+matchLabel+'</span>' +
+          (entry.dupe.similarity !== null ? '<span style="font-size:11px;font-weight:700;background:rgba(253,0,68,.08);color:#fd0044;border-radius:4px;padding:2px 7px;">'+entry.dupe.similarity+'% visual match</span>' : '') +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;">' +
+          '<span id="bulk-status-'+index+'" style="font-size:12px;font-weight:600;color:#fd0044;">Flagged</span>' +
+          '<button type="button" data-remove onclick="removeFromQueue('+index+')" style="font-size:12px;padding:4px 10px;background:transparent;border:1px solid #fd0044;color:#fd0044;border-radius:6px;cursor:pointer;font-weight:600;white-space:nowrap;">Remove</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;">' +
+        '<div style="padding:12px;border-right:1px solid var(--border);">' +
+          '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px;">New upload</div>' +
+          '<img src="'+previewURL+'" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;background:var(--border);display:block;">' +
+          '<div style="margin-top:6px;font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+entry.file.name+'">'+entry.file.name+'</div>' +
+          '<div style="font-size:11px;color:var(--muted);">'+entry.dim.w+'×'+entry.dim.h+' &nbsp;·&nbsp; '+(entry.file.size/1024/1024).toFixed(1)+' MB</div>' +
+        '</div>' +
+        '<div style="padding:12px;">' +
+          '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px;">In library (ID '+entry.dupe.id+')</div>' +
+          '<img src="'+existingThumb+'" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;background:var(--border);display:block;">' +
+          '<div style="margin-top:6px;font-size:11px;color:var(--text);">'+entry.dupe.author+'</div>' +
+          '<div style="font-size:11px;color:var(--muted);">'+matchLabel+'</div>' +
+        '</div>' +
+      '</div>';
+  } else {
+    row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 12px;border-radius:8px;margin-bottom:4px;background:var(--bg);border:1px solid var(--border);font-size:12px;';
+    row.innerHTML =
+      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);" title="'+entry.file.name+'">'+entry.file.name+'</span>' +
+      '<span style="color:var(--muted);white-space:nowrap;">'+entry.dim.w+'×'+entry.dim.h+'</span>' +
+      '<span style="color:var(--muted);white-space:nowrap;">'+(entry.file.size/1024/1024).toFixed(1)+' MB</span>' +
+      '<span id="bulk-status-'+index+'" style="min-width:70px;text-align:right;font-weight:600;color:var(--muted);">Pending</span>';
+  }
+  bulkRowsEl.appendChild(row);
+}
+
+async function stageBulkFiles(files) {
+  if (!files || !files.length) return;
+  bulkQueueEl.style.display = 'block';
+  var existingImages = await loadBulkExistingImages();
+  var rootURL = '{{.RootURL}}';
+  for (var i = 0; i < files.length; i++) {
+    var file = files[i];
+    var dim = await readImageDimensions(file);
+    var fileDataURL = await new Promise(function(resolve) {
+      var r = new FileReader();
+      r.onload = function(e){ resolve(e.target.result); };
+      r.onerror = function(){ resolve(null); };
+      r.readAsDataURL(file);
+    });
+    bulkStatusEl.textContent = 'Checking ' + (i + 1) + ' of ' + files.length + '…';
+    var dupe = await checkDuplicate(file, dim, fileDataURL, existingImages, rootURL);
+    var entry = { file: file, dim: dim, dupe: dupe, removed: false };
+    bulkEntries.push(entry);
+    renderBulkRow(entry, bulkEntries.length - 1);
+  }
+  updateBulkControls();
+}
+
+document.getElementById('bulkAuthor').addEventListener('input', function() {
+  updateBulkControls();
+});
+
+document.getElementById('bulkAddFiles').addEventListener('click', function() {
+  bulkFileInput.click();
+});
+
+document.getElementById('bulkClearFiles').addEventListener('click', function() {
+  clearBulkQueue();
+});
+
+document.getElementById('bulkFiles').addEventListener('change', async function(e) {
+  var files = Array.from(e.target.files || []);
+  e.target.value = '';
+  await stageBulkFiles(files);
+});
+
+document.getElementById('bulkStart').addEventListener('click', async function() {
+  var author = bulkAuthorEl.value.trim();
+  if (!author) { alert('Author is required for bulk upload.'); return; }
+  var activeEntries = getActiveBulkEntries();
+  if (!activeEntries.length) return;
+
+  var btn = bulkStartBtn;
   btn.disabled = true;
   btn.textContent = 'Uploading…';
-  document.getElementById('bulkFiles').disabled = true;
-  document.getElementById('bulkAuthor').disabled = true;
+  bulkFileInput.disabled = true;
+  bulkAddFilesBtn.disabled = true;
+  bulkClearFilesBtn.disabled = true;
+  bulkAuthorEl.disabled = true;
 
   var tags = document.getElementById('bulkTagsHidden').value.trim();
   var altText = document.getElementById('bulkAltText').value.trim();
   var notes = document.getElementById('bulkNotes').value.trim();
   var ok = 0, fail = 0;
 
-  for (var i = 0; i < bulkFiles.length; i++) {
-    var f = bulkFiles[i];
-    if (f === null) continue; // skipped by user
-    document.getElementById('bulkStatus').textContent = 'Uploading ' + (ok+fail+1) + ' of ' + bulkFiles.filter(function(x){return x!==null;}).length + '…';
-    setRowStatus(i, 'Uploading…', 'var(--muted)');
+  for (var i = 0; i < activeEntries.length; i++) {
+    var entry = activeEntries[i];
+    var idx = bulkEntries.indexOf(entry);
+    document.getElementById('bulkStatus').textContent = 'Uploading ' + (ok + fail + 1) + ' of ' + activeEntries.length + '…';
+    setRowStatus(idx, 'Uploading…', 'var(--muted)');
 
     var nextId;
     try {
       var idRes = await fetch('/admin/api/next-id');
       var idData = await idRes.json();
       nextId = String(idData.next_id);
-    } catch(e) { setRowStatus(i, 'ID error', '#e74c3c'); fail++; continue; }
+    } catch(e) {
+      setRowStatus(idx, 'ID error', '#e74c3c');
+      fail++;
+      continue;
+    }
 
-    var dim = await readImageDimensions(f);
     var fd = new FormData();
     fd.append('id', nextId);
     fd.append('author', author);
-    fd.append('url', f.name);
+    fd.append('url', entry.file.name);
     fd.append('tags', tags);
     fd.append('alt_text', altText);
     fd.append('notes', notes);
-    fd.append('width', dim.w || 0);
-    fd.append('height', dim.h || 0);
-    fd.append('photo', f);
+    fd.append('width', entry.dim.w || 0);
+    fd.append('height', entry.dim.h || 0);
+    fd.append('photo', entry.file);
 
     try {
-      var res = await fetch('/admin/photos/upload', {method:'POST', body:fd, redirect:'manual'});
+      var res = await fetch('/admin/photos/upload', { method: 'POST', body: fd, redirect: 'manual' });
       if (res.type === 'opaqueredirect' || res.ok || res.status === 0) {
-        setRowStatus(i, 'Done', 'var(--success-color)'); ok++;
-      } else { setRowStatus(i, 'Failed', '#e74c3c'); fail++; }
-    } catch(e) { setRowStatus(i, 'Error', '#e74c3c'); fail++; }
+        setRowStatus(idx, 'Done', 'var(--success-color)');
+        ok++;
+      } else {
+        setRowStatus(idx, 'Failed', '#e74c3c');
+        fail++;
+      }
+    } catch(e) {
+      setRowStatus(idx, 'Error', '#e74c3c');
+      fail++;
+    }
   }
 
-  var summary = document.getElementById('bulkSummary');
-  summary.style.display = 'block';
-  summary.style.color = fail ? '#e74c3c' : 'var(--success-color)';
-  summary.textContent = ok + ' uploaded successfully' + (fail ? ', ' + fail + ' failed' : '') + '.';
-  document.getElementById('bulkStatus').textContent = 'Done';
-  btn.textContent = 'Upload all';
+  bulkSummaryEl.style.display = 'block';
+  bulkSummaryEl.style.color = fail ? '#e74c3c' : 'var(--success-color)';
+  bulkSummaryEl.textContent = ok + ' uploaded successfully' + (fail ? ', ' + fail + ' failed' : '') + '.';
+  bulkStatusEl.textContent = 'Done';
+  btn.textContent = 'Upload queued files';
 
   if (ok > 0) {
     setTimeout(function(){ window.location.href = '/admin/photos?success=Bulk+import+complete'; }, 800);
   } else {
     btn.disabled = false;
-    document.getElementById('bulkFiles').disabled = false;
-    document.getElementById('bulkAuthor').disabled = false;
+    bulkFileInput.disabled = false;
+    bulkAddFilesBtn.disabled = false;
+    bulkClearFilesBtn.disabled = false;
+    bulkAuthorEl.disabled = false;
   }
 });
 </script>
