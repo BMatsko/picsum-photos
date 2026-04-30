@@ -5,18 +5,22 @@
 .pair-card{background:var(--surface);border:1px solid rgba(253,0,68,.25);border-radius:var(--radius);margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow)}
 .pair-header{padding:10px 16px;background:rgba(253,0,68,.04);border-bottom:1px solid rgba(253,0,68,.12);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .sim-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(253,0,68,.1);color:#fd0044}
-.pair-body{display:grid;grid-template-columns:1fr 1fr;min-height:0}
+.pair-body{display:grid;grid-template-columns:repeat(2,1fr);min-height:0}
 .pair-side{padding:16px;display:flex;flex-direction:column;gap:8px}
 .pair-side+.pair-side{border-left:1px solid var(--border)}
 .pair-thumb{width:100%;max-height:180px;object-fit:cover;border-radius:8px;background:var(--bg);display:block}
 .pair-meta{font-size:12px;color:var(--muted);line-height:1.6}
 .pair-meta strong{color:var(--text);font-weight:600}
 .tag-pill{display:inline-block;background:rgba(89,84,249,.1);color:#5954F9;border:1px solid rgba(89,84,249,.2);border-radius:4px;font-size:11px;font-weight:600;padding:1px 6px;margin:1px}
-.tag-pill.new{background:rgba(70,202,141,.12);color:#1a8c4a;border-color:rgba(70,202,141,.3)}
 .winner-radio{display:none}
 .winner-label{display:block;cursor:pointer;border:2px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12px;font-weight:600;color:var(--muted);text-align:center;transition:all .12s;user-select:none}
 .winner-label:hover{border-color:var(--blue);color:var(--blue)}
 .winner-radio:checked+.winner-label{border-color:var(--green);background:rgba(70,202,141,.08);color:#1a8c4a}
+.merge-toggle{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none}
+.merge-toggle input{margin:0}
+.pair-suggestions{padding:12px 16px;border-top:1px solid var(--border);background:var(--bg);display:flex;flex-direction:column;gap:8px}
+.pair-suggestion{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:12px}
+.pair-suggestion.dismissed{opacity:.35;pointer-events:none}
 .pair-actions{padding:12px 16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;background:var(--bg)}
 .dismissed{opacity:.35;pointer-events:none}
 .scan-progress{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:10px}
@@ -29,12 +33,11 @@
 {{template "topbar" .}}
 <main>
 <h1>Deduplicate</h1>
-<p class="sub">Visually scans your library for duplicate images using perceptual hashing. All merges require your approval — nothing is deleted automatically.</p>
+<p class="sub">Visually scans your library for duplicate images using perceptual hashing. Merges require your approval, and you can ignore individual suggestions so they do not reappear in future scans.</p>
 
 {{if .Success}}<div class="alert alert-ok">{{.Success}}</div>{{end}}
 {{if .Error}}<div class="alert alert-err">{{.Error}}</div>{{end}}
 
-<!-- Scan controls -->
 <div class="card" id="scanCard">
   <h2>Scan settings</h2>
   <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
@@ -55,11 +58,10 @@
   </div>
 </div>
 
-<!-- Results -->
 <div id="results" style="display:none;">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
     <h2 style="font-family:var(--font-heading);font-size:14px;font-weight:700;color:var(--teal);margin:0;">
-      Duplicate pairs found: <span id="pairCount">0</span>
+      Duplicate groups found: <span id="pairCount">0</span>
     </h2>
     <div style="display:flex;gap:8px;">
       <button class="btn btn-ghost" style="font-size:12px;" onclick="dismissAll()">Dismiss all</button>
@@ -73,7 +75,12 @@
 var ROOT = '{{.RootURL}}';
 var allImages = [];
 var hashCache = {};   // id → Uint8Array hash
-var pairs = [];       // [{a, b, sim}]
+var groups = [];      // [{members, edges, maxSim}]
+var ignoredPairs = {};
+
+function pairKey(a, b) {
+  return a < b ? a + '|' + b : b + '|' + a;
+}
 
 // ── aHash 16×16 ──────────────────────────────────────────────────────────────
 var _hc = document.createElement('canvas');
@@ -117,7 +124,6 @@ function hammingSim(h1, h2) {
   return same / 256;
 }
 
-// ── Union-Find (for clustering connected duplicate groups) ─────────────────
 function makeUF(ids) {
   var parent = {}, rank = {};
   ids.forEach(function(id){ parent[id] = id; rank[id] = 0; });
@@ -128,14 +134,19 @@ function makeUF(ids) {
   function union(x, y) {
     var px = find(x), py = find(y);
     if (px === py) return;
-    if ((rank[px]||0) < (rank[py]||0)) { parent[px] = py; }
-    else if ((rank[px]||0) > (rank[py]||0)) { parent[py] = px; }
+    if ((rank[px]||0) < (rank[py]||0)) parent[px] = py;
+    else if ((rank[px]||0) > (rank[py]||0)) parent[py] = px;
     else { parent[py] = px; rank[px] = (rank[px]||0) + 1; }
   }
   return {find: find, union: union};
 }
 
-// ── Scan ──────────────────────────────────────────────────────────────
+function setVisibleCount() {
+  var visible = document.querySelectorAll('.pair-card:not(.dismissed)').length;
+  document.getElementById('pairCount').textContent = visible;
+  document.getElementById('noDupes').style.display = visible ? 'none' : 'block';
+}
+
 async function startScan() {
   var threshold = parseInt(document.getElementById('thresholdSlider').value) / 100;
   var btn = document.getElementById('scanBtn');
@@ -145,14 +156,16 @@ async function startScan() {
   document.getElementById('scanSummary').textContent = '';
   document.getElementById('results').style.display = 'none';
   document.getElementById('pairList').innerHTML = '';
-  pairs = [];
+  groups = [];
   hashCache = {};
+  ignoredPairs = {};
 
-  // Fetch image list
   document.getElementById('scanLabel').textContent = 'Fetching image list…';
   try {
     var res = await fetch('/admin/api/images-for-dedupe');
-    allImages = await res.json();
+    var payload = await res.json();
+    allImages = payload.images || payload || [];
+    (payload.ignoredPairs || []).forEach(function(p) { ignoredPairs[pairKey(p.a, p.b)] = true; });
   } catch(e) {
     document.getElementById('scanSummary').textContent = 'Error fetching images.';
     btn.disabled = false; btn.textContent = 'Run scan';
@@ -166,7 +179,6 @@ async function startScan() {
     return;
   }
 
-  // Hash all images
   for (var i = 0; i < n; i++) {
     var pct = Math.round((i / n) * 70);
     document.getElementById('scanBar').style.width = pct + '%';
@@ -174,11 +186,10 @@ async function startScan() {
     await loadImageHash(allImages[i].id);
   }
 
-  // Compare all pairs O(n²), build edges
   document.getElementById('scanLabel').textContent = 'Comparing pairs…';
   var ids = allImages.map(function(img){ return img.id; });
   var uf = makeUF(ids);
-  var edges = []; // {a, b, sim} for display purposes
+  var edges = [];
   var total = n * (n-1) / 2, done = 0;
 
   for (var a = 0; a < n; a++) {
@@ -189,54 +200,46 @@ async function startScan() {
         document.getElementById('scanBar').style.width = pct2 + '%';
         await new Promise(function(r){ setTimeout(r, 0); });
       }
-      var sim = hammingSim(hashCache[allImages[a].id], hashCache[allImages[b].id]);
+      var idA = allImages[a].id;
+      var idB = allImages[b].id;
+      if (ignoredPairs[pairKey(idA, idB)]) continue;
+      var sim = hammingSim(hashCache[idA], hashCache[idB]);
       if (sim >= threshold) {
-        uf.union(allImages[a].id, allImages[b].id);
-        edges.push({ai: a, bi: b, sim: Math.round(sim * 100)});
+        uf.union(idA, idB);
+        edges.push({a: idA, b: idB, sim: Math.round(sim * 100)});
       }
     }
   }
 
-  // Build groups from connected components
-  var groupMap = {}; // root id → {members: [img], maxSim, edges}
+  var groupMap = {};
   edges.forEach(function(e) {
-    var root = uf.find(allImages[e.ai].id);
-    if (!groupMap[root]) groupMap[root] = {members: [], maxSim: 0, simMap: {}};
+    var root = uf.find(e.a);
+    if (!groupMap[root]) groupMap[root] = {members: [], edges: [], maxSim: 0};
+    groupMap[root].edges.push(e);
     groupMap[root].maxSim = Math.max(groupMap[root].maxSim, e.sim);
-    // Track per-pair sim for display
-    groupMap[root].simMap[allImages[e.ai].id + '_' + allImages[e.bi].id] = e.sim;
   });
-  // Populate members from all images belonging to each component
   allImages.forEach(function(img) {
     var root = uf.find(img.id);
     if (groupMap[root]) {
-      // Avoid duplicates
       if (!groupMap[root].members.find(function(m){ return m.id === img.id; })) {
         groupMap[root].members.push(img);
       }
     }
   });
 
-  // Convert to array, only groups with 2+ members
-  var groups = Object.values(groupMap).filter(function(g){ return g.members.length >= 2; });
-  // Sort by group size desc, then similarity desc
+  groups = Object.values(groupMap).filter(function(g){ return g.members.length >= 2; });
   groups.sort(function(a,b){ return b.members.length - a.members.length || b.maxSim - a.maxSim; });
-
-  // Store groups as "pairs" for backward compat
-  pairs = groups;
 
   document.getElementById('scanBar').style.width = '100%';
   document.getElementById('scanLabel').textContent = 'Done';
   var totalImages = groups.reduce(function(s,g){ return s+g.members.length; }, 0);
-  document.getElementById('scanSummary').textContent =
-    groups.length + ' group' + (groups.length===1?'':'s') + ' (' + totalImages + ' images)';
+  document.getElementById('scanSummary').textContent = groups.length + ' group' + (groups.length===1?'':'s') + ' (' + totalImages + ' images)';
 
-  renderPairs();
+  renderGroups();
   document.getElementById('results').style.display = 'block';
   btn.disabled = false; btn.textContent = 'Re-scan';
 }
 
-// ── Render ────────────────────────────────────────────────────────────────────
 function tagPills(tags) {
   return (tags || []).map(function(t) {
     return '<span class="tag-pill">' + t + '</span>';
@@ -251,13 +254,30 @@ function allGroupTags(group) {
   return result.sort();
 }
 
-function renderPairs() {
+function updateGroupControls(idx) {
+  var card = document.getElementById('pair-' + idx);
+  if (!card) return;
+  var winnerRadio = card.querySelector('input[name="winner-' + idx + '"]:checked');
+  var mergeBoxes = Array.from(card.querySelectorAll('input[name="merge-' + idx + '"]'));
+  mergeBoxes.forEach(function(cb) {
+    var isWinner = !!winnerRadio && cb.value === winnerRadio.value;
+    cb.disabled = isWinner;
+    if (isWinner) cb.checked = false;
+  });
+  var mergeBtn = document.getElementById('merge-btn-' + idx);
+  if (mergeBtn) {
+    var canMerge = !!winnerRadio && mergeBoxes.some(function(cb){ return cb.checked && !cb.disabled; });
+    mergeBtn.disabled = !canMerge;
+  }
+}
+
+function renderGroups() {
   var list = document.getElementById('pairList');
   list.innerHTML = '';
-  document.getElementById('pairCount').textContent = pairs.length;
-  document.getElementById('noDupes').style.display = pairs.length ? 'none' : 'block';
+  document.getElementById('pairCount').textContent = groups.length;
+  document.getElementById('noDupes').style.display = groups.length ? 'none' : 'block';
 
-  pairs.forEach(function(group, idx) {
+  groups.forEach(function(group, idx) {
     var mergedTags = allGroupTags(group);
     var memberCount = group.members.length;
     var card = document.createElement('div');
@@ -277,25 +297,45 @@ function renderPairs() {
     group.members.forEach(function(img, mi) { bodyHtml += renderMember(img, idx, mi); });
     bodyHtml += '</div>';
 
+    var suggestionsHtml = '<div class="pair-suggestions">';
+    if (group.edges.length) {
+      group.edges.forEach(function(edge) {
+        suggestionsHtml +=
+          '<div class="pair-suggestion" data-edge="' + pairKey(edge.a, edge.b) + '" data-a="' + edge.a + '" data-b="' + edge.b + '">' +
+            '<div><strong>' + edge.a + '</strong> ↔ <strong>' + edge.b + '</strong> <span style="color:var(--muted);">(' + edge.sim + '%)</span></div>' +
+            '<button type="button" class="btn btn-ghost" style="font-size:11px;padding:4px 10px;" onclick="ignoreSuggestion(' + idx + ', \'' + edge.a + '\', \'' + edge.b + '\')">Ignore</button>' +
+          '</div>';
+      });
+    } else {
+      suggestionsHtml += '<div style="font-size:12px;color:var(--muted);">No active pair suggestions in this group.</div>';
+    }
+    suggestionsHtml += '</div>';
+
     var actionsHtml =
       '<div class="pair-actions">' +
-        '<span style="font-size:12px;color:var(--muted);">Select the image to <strong style="color:var(--success-color);">keep</strong> — all others will be merged in and permanently deleted.</span>' +
-        '<button type="button" class="btn btn-primary" style="margin-left:auto;font-size:12px;padding:6px 16px;white-space:nowrap;" onclick="mergeGroup(' + idx + ')">Merge group →</button>' +
+        '<span style="font-size:12px;color:var(--muted);">Select the image to keep, then choose which others to merge. You can merge only a subset when more than two images are present.</span>' +
+        '<button type="button" class="btn btn-primary" id="merge-btn-' + idx + '" style="margin-left:auto;font-size:12px;padding:6px 16px;white-space:nowrap;" onclick="mergeGroup(' + idx + ')">Merge selected</button>' +
       '</div>';
 
-    card.innerHTML = headerHtml + bodyHtml + actionsHtml;
+    card.innerHTML = headerHtml + bodyHtml + suggestionsHtml + actionsHtml;
     list.appendChild(card);
+    updateGroupControls(idx);
   });
+  setVisibleCount();
 }
 
 function renderMember(img, groupIdx, memberIdx) {
   return (
-    '<div class="pair-side">' +
+    '<div class="pair-side" data-member-id="' + img.id + '">' +
       '<img class="pair-thumb" src="' + ROOT + '/id/' + img.id + '/400/200" alt="" loading="lazy">' +
       '<div style="display:flex;align-items:center;gap:8px;">' +
-        '<input type="radio" name="winner-' + groupIdx + '" id="win-' + groupIdx + '-' + memberIdx + '" class="winner-radio" value="' + img.id + '">' +
+        '<input type="radio" name="winner-' + groupIdx + '" id="win-' + groupIdx + '-' + memberIdx + '" class="winner-radio" value="' + img.id + '" onchange="updateGroupControls(' + groupIdx + ')">' +
         '<label for="win-' + groupIdx + '-' + memberIdx + '" class="winner-label" style="flex:1;">Keep</label>' +
       '</div>' +
+      '<label class="merge-toggle">' +
+        '<input type="checkbox" name="merge-' + groupIdx + '" value="' + img.id + '" checked onchange="updateGroupControls(' + groupIdx + ')">' +
+        '<span>Merge this image</span>' +
+      '</label>' +
       '<div class="pair-meta">' +
         '<strong>ID:</strong> ' + img.id + '<br>' +
         '<strong>Author:</strong> ' + (img.author || '—') + '<br>' +
@@ -306,37 +346,61 @@ function renderMember(img, groupIdx, memberIdx) {
   );
 }
 
-// ── Actions ──────────────────────────────────────────────────────────────────
 function dismissPair(idx) {
   var card = document.getElementById('pair-' + idx);
   if (card) card.classList.add('dismissed');
-  var visible = document.querySelectorAll('.pair-card:not(.dismissed)').length;
-  document.getElementById('pairCount').textContent = visible;
-  document.getElementById('noDupes').style.display = visible ? 'none' : 'block';
+  setVisibleCount();
 }
 
 function dismissAll() {
   document.querySelectorAll('.pair-card').forEach(function(c){ c.classList.add('dismissed'); });
-  document.getElementById('pairCount').textContent = '0';
-  document.getElementById('noDupes').style.display = 'block';
+  setVisibleCount();
+}
+
+function hideMergedMembers(idx, ids) {
+  var card = document.getElementById('pair-' + idx);
+  if (!card) return;
+  ids.forEach(function(id) {
+    card.querySelectorAll('[data-member-id="' + id + '"]').forEach(function(el) {
+      el.style.display = 'none';
+    });
+    card.querySelectorAll('[data-edge="' + pairKey(id, id) + '"]').forEach(function(el) { el.style.display = 'none'; });
+    card.querySelectorAll('.pair-suggestion').forEach(function(row) {
+      var txt = row.getAttribute('data-edge') || '';
+      var aId = row.getAttribute('data-a') || '';
+      var bId = row.getAttribute('data-b') || '';
+      if (aId === id || bId === id) {
+        row.style.display = 'none';
+      }
+    });
+  });
+  var visibleMembers = Array.from(card.querySelectorAll('.pair-side')).filter(function(el){ return el.style.display !== 'none'; }).length;
+  var visibleSuggestions = Array.from(card.querySelectorAll('.pair-suggestion')).filter(function(el){ return el.style.display !== 'none'; }).length;
+  if (visibleMembers < 2 || visibleSuggestions === 0) {
+    card.classList.add('dismissed');
+  }
+  setVisibleCount();
 }
 
 async function mergeGroup(idx) {
-  var group = pairs[idx];
-  var winnerRadio = document.querySelector('input[name="winner-' + idx + '"]:checked');
+  var card = document.getElementById('pair-' + idx);
+  var winnerRadio = card ? card.querySelector('input[name="winner-' + idx + '"]:checked') : null;
   if (!winnerRadio) { alert('Select which image to keep first.'); return; }
   var winnerID = winnerRadio.value;
-  var loserIDs = group.members.filter(function(m){ return m.id !== winnerID; }).map(function(m){ return m.id; });
+  var loserIDs = Array.from(card.querySelectorAll('input[name="merge-' + idx + '"]:checked'))
+    .map(function(cb){ return cb.value; })
+    .filter(function(id){ return id !== winnerID; });
+
+  if (!loserIDs.length) { alert('Select at least one other image to merge.'); return; }
 
   if (!confirm(
-    'Keep ID ' + winnerID + ' and merge + delete ' + loserIDs.length +
-    ' other image' + (loserIDs.length > 1 ? 's' : '') + ' (ID ' + loserIDs.join(', ') + ')?\n\n' +
-    '\u2022 Tags from all images combined on ID ' + winnerID + '\n' +
-    '\u2022 Seeds rewritten to ID ' + winnerID + '\n' +
-    '\u2022 Other images permanently deleted from storage\n\nThis cannot be undone.'
+    'Keep ID ' + winnerID + ' and merge ' + loserIDs.length +
+    ' selected image' + (loserIDs.length > 1 ? 's' : '') + ' into it?\n\n' +
+    '\u2022 Tags from the selected images will be combined onto ID ' + winnerID + '\n' +
+    '\u2022 Seeds will be rewritten to ID ' + winnerID + '\n' +
+    '\u2022 Unselected images in the group will remain untouched\n\nThis cannot be undone.'
   )) return;
 
-  var card = document.getElementById('pair-' + idx);
   card.style.opacity = '0.5';
   card.style.pointerEvents = 'none';
 
@@ -359,21 +423,44 @@ async function mergeGroup(idx) {
       allImages = allImages.filter(function(img){ return img.id !== loserID; });
     });
 
-    card.style.border = '1px solid rgba(70,202,141,.4)';
-    card.style.background = 'rgba(70,202,141,.04)';
-    card.querySelector('.pair-header').innerHTML =
-      '<span style="font-size:12px;font-weight:700;color:#1a8c4a;">\u2713 Merged ' +
-      loserIDs.length + ' image' + (loserIDs.length > 1 ? 's' : '') + ' into ID ' + winnerID + '</span>';
-    card.querySelector('.pair-body').style.display = 'none';
-    card.querySelector('.pair-actions').style.display = 'none';
+    hideMergedMembers(idx, loserIDs);
+    card.style.opacity = '1';
+    card.style.pointerEvents = '';
   } catch (e) {
     card.style.opacity = '1';
     card.style.pointerEvents = '';
     alert('Merge failed: ' + (e && e.message ? e.message : e));
   }
+}
 
-  var visible = document.querySelectorAll('.pair-card:not(.dismissed)').length;
-  document.getElementById('pairCount').textContent = visible;
+async function ignoreSuggestion(idx, a, b) {
+  if (!confirm('Ignore this duplicate suggestion permanently? It will not appear in future scans.')) return;
+  try {
+    var res = await fetch('/admin/dedupe/ignore', {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ a: a, b: b })
+    });
+    if (res.status !== 204 && !res.ok) {
+      var msg = await res.text();
+      throw new Error(msg || ('Ignore failed with status ' + res.status));
+    }
+    ignoredPairs[pairKey(a, b)] = true;
+    var card = document.getElementById('pair-' + idx);
+    if (!card) return;
+    var row = card.querySelector('.pair-suggestion[data-edge="' + pairKey(a, b) + '"]');
+    if (row) row.style.display = 'none';
+    var visibleSuggestions = Array.from(card.querySelectorAll('.pair-suggestion')).filter(function(el){ return el.style.display !== 'none'; }).length;
+    if (visibleSuggestions === 0) {
+      card.classList.add('dismissed');
+    }
+    updateGroupControls(idx);
+    setVisibleCount();
+  } catch (e) {
+    alert('Ignore failed: ' + (e && e.message ? e.message : e));
+  }
 }
 </script>
 </main></body></html>

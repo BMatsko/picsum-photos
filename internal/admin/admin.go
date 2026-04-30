@@ -307,8 +307,6 @@ func (a *Admin) handlePhotos(w http.ResponseWriter, r *http.Request) {
 		"Layout":       layout,
 		"PrevURL":      makePageURL(page - 1),
 		"NextURL":      makePageURL(page + 1),
-		"HasPrev":      page > 1,
-		"HasNext":      page < totalPages,
 	})
 }
 
