@@ -1,4 +1,20 @@
-{{define "photos.html"}}<!DOCTYPE html>
+function setPhotoLayout(layout) {
+  var grid = document.getElementById('photoGridView');
+  var table = document.getElementById('photoTableView');
+  if (!grid || !table) return;
+  var selected = layout === 'table' ? 'table' : 'grid';
+  if (selected === 'table') {
+    grid.classList.add('photo-layout-hidden');
+    table.classList.remove('photo-layout-hidden');
+  } else {
+    grid.classList.remove('photo-layout-hidden');
+    table.classList.add('photo-layout-hidden');
+  }
+  var url = new URL(window.location.href);
+  url.searchParams.set('layout', selected);
+  window.history.replaceState({}, '', url.toString());
+  filterPhotos();
+}{{define "photos.html"}}<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><title>Photos — Brayden's Pic</title>{{template "style" .}}
 <script defer src="https://stats.brayden.me/script.js" data-website-id="809e57d9-ac37-41fc-96bd-9744c2cc96dd"></script>
 <style>
@@ -267,6 +283,7 @@ function setPhotoLayout(layout) {
   var url = new URL(window.location.href);
   url.searchParams.set('layout', selected);
   window.history.replaceState({}, '', url.toString());
+  filterPhotos();
 }
 function filterPhotos() {
   var fId     = (document.getElementById('filterPhotoId').value     || '').toLowerCase();
@@ -275,6 +292,7 @@ function filterPhotos() {
   var fTag    = (document.getElementById('filterPhotoTag').value    || '').toLowerCase();
   var items = getPhotoItems();
   var visible = 0;
+  var activeView = document.getElementById('photoGridView').classList.contains('photo-layout-hidden') ? document.getElementById('photoTableView') : document.getElementById('photoGridView');
   items.forEach(function(item) {
     var tags = (item.dataset.tags || '').toLowerCase();
     var show = item.dataset.id.toLowerCase().includes(fId)
@@ -282,7 +300,7 @@ function filterPhotos() {
       && (item.dataset.filename || '').toLowerCase().includes(fFile)
       && tags.includes(fTag);
     item.style.display = show ? '' : 'none';
-    if (show) visible++;
+    if (show && activeView.contains(item)) visible++;
   });
   var countEl = document.getElementById('photoVisibleCount');
   if (countEl) countEl.textContent = visible;
