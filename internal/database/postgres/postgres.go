@@ -76,6 +76,13 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS idx_seed_resolutions_seed ON seed_resolutions(seed);
 
+CREATE TABLE IF NOT EXISTS dedupe_ignored_pairs (
+	image_a   TEXT NOT NULL,
+	image_b   TEXT NOT NULL,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	PRIMARY KEY (image_a, image_b)
+);
+
 CREATE TABLE IF NOT EXISTS api_keys (
 	id         TEXT PRIMARY KEY,
 	name       TEXT NOT NULL DEFAULT '',
@@ -282,6 +289,38 @@ func (p *Provider) getRandomWithSeedAndTag(ctx context.Context, seed int64, tag 
 // ListAll returns every image sorted by ID.
 func (p *Provider) ListAll(ctx context.Context) ([]database.Image, error) {
 	return p.listFiltered(ctx, "", 0, 1<<31)
+}
+
+// CountImages returns the total number of images in the library.
+func (p *Provider) CountImages(ctx context.Context) (int, error) {
+	var count int
+	row := p.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM images`)
+	if err := row.Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// ListAllWithTagsPaginated returns images including tags, filename, alt text, and notes for a page slice.
+func (p *Provider) ListAllWithTagsPaginated(ctx context.Context, offset, limit int) ([]ImageWithTags, error) {
+	rows, err := p.pool.Query(ctx,
+		`SELECT id, author, url, filename, width, height, tags, alt_text, notes FROM images ORDER BY id LIMIT $1 OFFSET $2`,
+		limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var images []ImageWithTags
+	for rows.Next() {
+		img := ImageWithTags{}
+		if err := rows.Scan(&img.ID, &img.Author, &img.URL, &img.Filename, &img.Width, &img.Height, &img.Tags, &img.AltText, &img.Notes); err != nil {
+			return nil, err
+		}
+		images = append(images, img)
+	}
+	return images, nil
 }
 
 // List returns a paginated slice of images sorted by ID.
