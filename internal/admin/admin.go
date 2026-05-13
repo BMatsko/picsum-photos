@@ -36,6 +36,7 @@ type Admin struct {
 	SFTP         *sftpStorage.Provider // nil when using local file storage
 	Password     string
 	RootURL      string
+	OIDC         *OIDC
 	templates    *template.Template
 }
 
@@ -87,12 +88,17 @@ func New(db *postgres.Provider, storagePath string, sftp *sftpStorage.Provider, 
 	if err != nil {
 		return nil, fmt.Errorf("parsing admin templates: %w", err)
 	}
+	oidcConfig, err := newOIDC(rootURL)
+	if err != nil {
+		return nil, fmt.Errorf("initializing OIDC: %w", err)
+	}
 	return &Admin{
 		DB:          db,
 		StoragePath: storagePath,
 		SFTP:        sftp,
 		Password:    password,
 		RootURL:     rootURL,
+		OIDC:        oidcConfig,
 		templates:   tmpl,
 	}, nil
 }
@@ -102,6 +108,8 @@ func (a *Admin) Router() http.Handler {
 	r := mux.NewRouter()
 	r.HandleFunc("/admin/login", a.handleLoginPage).Methods("GET")
 	r.HandleFunc("/admin/login", a.handleLoginSubmit).Methods("POST")
+	r.HandleFunc("/admin/auth/login", a.handleOIDCLogin).Methods("GET")
+	r.HandleFunc("/admin/auth/callback", a.handleOIDCCallback).Methods("GET")
 	r.HandleFunc("/admin/logout", a.handleLogout).Methods("POST")
 	r.HandleFunc("/admin", a.auth(a.handleDashboard)).Methods("GET")
 	r.HandleFunc("/admin/photos", a.auth(a.handlePhotos)).Methods("GET")
@@ -147,7 +155,12 @@ func (a *Admin) auth(next http.HandlerFunc) http.HandlerFunc {
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 func (a *Admin) handleLoginPage(w http.ResponseWriter, r *http.Request) {
-	a.render(w, "login.html", map[string]any{"Error": r.URL.Query().Get("error")})
+	a.render(w, "login.html", map[string]any{
+		"Error":          r.URL.Query().Get("error"),
+		"OIDCEnabled":    a.oidcEnabled(),
+		"OIDCLoginURL":   "/admin/auth/login",
+		"PasswordEnabled": strings.TrimSpace(a.Password) != "",
+	})
 }
 
 func (a *Admin) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
@@ -155,15 +168,19 @@ func (a *Admin) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/login?error=Invalid+password", http.StatusFound)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name: "admin_session", Value: sessionToken,
-		Path: "/admin", HttpOnly: true, SameSite: http.SameSiteLaxMode,
-	})
+	a.setAdminCookie(w, "admin_session", sessionToken, 0, time.Time{}, "/admin")
 	http.Redirect(w, r, "/admin", http.StatusFound)
 }
 
 func (a *Admin) handleLogout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: "admin_session", Value: "", Path: "/admin", MaxAge: -1})
+	logoutURL, ok := a.oidcLogoutURL(r)
+	a.clearAdminCookie(w, "admin_session", "/admin")
+	a.clearOIDCCookies(w)
+	a.clearAdminCookie(w, oidcIDTokenCookieName, "/admin")
+	if ok {
+		http.Redirect(w, r, logoutURL, http.StatusFound)
+		return
+	}
 	http.Redirect(w, r, "/admin/login", http.StatusFound)
 }
 

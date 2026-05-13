@@ -10,6 +10,7 @@ require (
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/jamiealquiza/envy v1.1.0
 	github.com/prometheus/client_golang v1.23.2
+	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/prometheus/common v0.67.5
 	github.com/rs/cors v1.11.1
 	github.com/twmb/murmur3 v1.1.8
@@ -19,6 +20,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.39.0
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/zap v1.27.1
+	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.20.0
 	tailscale.com v1.94.1
 )
